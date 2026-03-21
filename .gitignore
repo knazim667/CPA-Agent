@@ -21,6 +21,7 @@ memory/short_term.json
 memory/skill_memory.json
 memory/active_business.json
 memory/long_term/*/*.db
+uploads/
 
 # Editor and test artifacts
 .pytest_cache/

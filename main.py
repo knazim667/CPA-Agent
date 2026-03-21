@@ -457,6 +457,183 @@ class CPAAgent:
             },
         }
 
+    def record_bulk_transactions(
+        self,
+        rows: list[list[Any]],
+        *,
+        source_name: str = "",
+        source_note: str = "",
+    ) -> dict[str, Any]:
+        profile = self.ensure_business_workspace_assets()
+        sheet_url = self._sheet_url(profile["google_sheet_id"])
+        normalized_rows = []
+        for row in rows:
+            normalized = self._normalize_row(row)
+            if source_name and not normalized[5]:
+                normalized[5] = source_name
+            if source_note and not normalized[6]:
+                normalized[6] = source_note
+            normalized_rows.append(normalized)
+
+        if not normalized_rows:
+            return {
+                "ok": False,
+                "message": "There were no draft transactions to record.",
+                "details": {"sheet_url": sheet_url},
+            }
+
+        draft_result = {
+            "status": "success",
+            "message": f"Prepared {len(normalized_rows)} transaction rows for approval.",
+            "details": {
+                "business": profile["business_name"],
+                "rows": normalized_rows,
+            },
+        }
+        reflection = self.self_reflect(
+            user_input=f"Record {len(normalized_rows)} approved document-based transactions.",
+            draft_result=draft_result,
+        )
+        if not reflection.get("approved"):
+            return {
+                "ok": False,
+                "message": reflection.get(
+                    "corrected_message",
+                    "I found a possible issue during verification and paused these transactions.",
+                ),
+                "reflection": reflection,
+            }
+
+        start_row = self._next_ledger_row_number(profile["google_sheet_id"], "Ledger")
+        end_row = start_row + len(normalized_rows) - 1
+        range_name = f"Ledger!A{start_row}:G{end_row}"
+        result = self.sheets.update_range(
+            spreadsheet_id=profile["google_sheet_id"],
+            range_name=range_name,
+            values=normalized_rows,
+        )
+        verification = self._verify_sheet_write(
+            spreadsheet_id=profile["google_sheet_id"],
+            range_name=range_name,
+        )
+        self._record_transaction_audit(
+            mode="approved_document_bulk_update",
+            requested_payload=normalized_rows,
+            result=result,
+            verification=verification,
+        )
+        if not verification["verified"]:
+            return {
+                "ok": False,
+                "message": "I could not verify that the approved document transactions were written to the sheet.",
+                "details": {
+                    "result": result,
+                    "verification": verification,
+                    "sheet_url": sheet_url,
+                },
+            }
+
+        return {
+            "ok": True,
+            "message": f"Approved document transactions recorded. Sheet: {sheet_url}",
+            "details": {
+                "result": result,
+                "verification": verification,
+                "sheet_url": sheet_url,
+                "rows": normalized_rows,
+            },
+        }
+
+    def draft_document_transactions(
+        self,
+        *,
+        file_name: str,
+        document_text: str,
+        instruction: str = "",
+    ) -> dict[str, Any]:
+        prompt = [
+            {
+                "role": "system",
+                "content": (
+                    "You are CPA-Agent drafting accounting entries from a source document. "
+                    "Read the extracted document text and return only JSON with keys summary, rows, concerns. "
+                    "Each row must contain date, description, category, amount, type, reference, notes. "
+                    "Use multiple rows if the document has multiple purchases. "
+                    "Be conservative and do not guess missing values."
+                ),
+            },
+            {
+                "role": "user",
+                "content": json.dumps(
+                    {
+                        "active_business": self.memory.get_current_business(),
+                        "instruction": instruction,
+                        "file_name": file_name,
+                        "document_text": document_text[:12000],
+                    },
+                    indent=2,
+                ),
+            },
+        ]
+        response_text = self.model_client.chat(prompt)
+        try:
+            start = response_text.index("{")
+            end = response_text.rindex("}") + 1
+            payload = json.loads(response_text[start:end])
+        except (ValueError, json.JSONDecodeError):
+            return {
+                "ok": False,
+                "message": "I could not convert that document into a clean draft table yet.",
+                "details": {"raw_response": response_text},
+            }
+
+        raw_rows = payload.get("rows", [])
+        rows = []
+        for item in raw_rows:
+            if not isinstance(item, dict):
+                continue
+            if item.get("amount") in (None, "") or not item.get("description"):
+                continue
+            rows.append(
+                self._normalize_row(
+                    [
+                        item.get("date", ""),
+                        item.get("description", ""),
+                        item.get("category", "Uncategorized"),
+                        item.get("amount", ""),
+                        item.get("type", "Expense"),
+                        item.get("reference", file_name),
+                        item.get("notes", ""),
+                    ]
+                )
+            )
+
+        if not rows:
+            return {
+                "ok": False,
+                "message": "I read the document, but I could not draft a reliable expense table from it.",
+                "details": {
+                    "summary": payload.get("summary", ""),
+                    "concerns": payload.get("concerns", []),
+                },
+            }
+
+        total_amount = sum(self._safe_float(row[3]) for row in rows)
+        return {
+            "ok": True,
+            "message": (
+                f"I prepared a draft with {len(rows)} row(s) totaling ${total_amount:.2f}. "
+                "Review it and approve when you're ready."
+            ),
+            "details": {
+                "summary": payload.get("summary", ""),
+                "concerns": payload.get("concerns", []),
+                "rows": rows,
+                "total_amount": round(total_amount, 2),
+                "file_name": file_name,
+            },
+        }
+
     def list_businesses(self) -> list[dict[str, str]]:
         businesses = []
         for key in self.memory.list_business_keys():

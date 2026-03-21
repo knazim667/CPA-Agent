@@ -165,6 +165,16 @@ button:disabled {
   margin-bottom: 20px;
 }
 
+.hero-badge {
+  align-self: center;
+  padding: 10px 14px;
+  border-radius: 999px;
+  background: rgba(31, 111, 95, 0.12);
+  color: var(--accent-strong);
+  font-size: 0.88rem;
+  font-weight: 600;
+}
+
 .hero-actions,
 .composer-actions {
   display: flex;
@@ -406,6 +416,7 @@ button:disabled {
   flex-wrap: wrap;
   gap: 10px;
   margin-top: 8px;
+  align-items: center;
 }
 
 .presentation-link {
@@ -416,6 +427,17 @@ button:disabled {
 
 .presentation-link:hover {
   text-decoration: underline;
+}
+
+.document-preview {
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 14px;
+  border: 1px dashed var(--line);
+  background: rgba(255, 255, 255, 0.66);
+  color: var(--muted);
+  font-size: 0.9rem;
+  white-space: pre-wrap;
 }
 
 .composer {

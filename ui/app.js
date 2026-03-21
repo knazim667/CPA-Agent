@@ -6,6 +6,7 @@ const switchBusinessButton = document.getElementById("switch-business-button");
 const modelModeSelect = document.getElementById("model-mode-select");
 const switchModelButton = document.getElementById("switch-model-button");
 const modelStatus = document.getElementById("model-status");
+const heroModelBadge = document.getElementById("hero-model-badge");
 const workspaceStatus = document.getElementById("workspace-status");
 const bootWarning = document.getElementById("boot-warning");
 const sheetLink = document.getElementById("sheet-link");
@@ -22,6 +23,11 @@ const transactionForm = document.getElementById("transaction-form");
 const transactionStatus = document.getElementById("transaction-status");
 const transactionSubmit = document.getElementById("transaction-submit");
 const recentAudits = document.getElementById("recent-audits");
+const documentForm = document.getElementById("document-form");
+const documentFile = document.getElementById("document-file");
+const documentNote = document.getElementById("document-note");
+const documentStatus = document.getElementById("document-status");
+const documentSubmit = document.getElementById("document-submit");
 const txDate = document.getElementById("tx-date");
 const txType = document.getElementById("tx-type");
 const txDescription = document.getElementById("tx-description");
@@ -111,13 +117,30 @@ function renderPresentation(presentation) {
     ? `<a class="presentation-link" href="${escapeHtml(presentation.sheet_url)}" target="_blank" rel="noreferrer">Open updated sheet</a>`
     : "";
 
+  const approvalButton = presentation.approval_token
+    ? `
+      <button
+        class="primary-button approval-button"
+        type="button"
+        data-approval-token="${escapeHtml(presentation.approval_token)}"
+      >
+        ${escapeHtml(presentation.approval_label || "Approve")}
+      </button>
+    `
+    : "";
+
+  const documentPreview = presentation.document_preview
+    ? `<div class="document-preview">${escapeHtml(presentation.document_preview)}</div>`
+    : "";
+
   return `
     <section class="presentation-block">
       <h4 class="presentation-title">${escapeHtml(presentation.title || "Accounting Summary")}</h4>
       ${summary ? `<div class="presentation-stats">${summary}</div>` : ""}
       ${table}
+      ${documentPreview}
       ${sources ? `<div class="presentation-links">${sources}</div>` : ""}
-      ${actionLink ? `<div class="presentation-links">${actionLink}</div>` : ""}
+      ${(actionLink || approvalButton) ? `<div class="presentation-links">${actionLink}${approvalButton}</div>` : ""}
     </section>
   `;
 }
@@ -169,6 +192,8 @@ function updateStatus(status, latestPresentation = null) {
     Primary: ${escapeHtml(modelConfig.reasoning_model || "Unknown")}<br />
     Audit: ${escapeHtml(modelConfig.reflection_model || "Unknown")}
   `;
+  heroModelBadge.textContent =
+    `Mode: ${(modelConfig.reasoning_mode || "fast").toUpperCase()} • ${modelConfig.reasoning_model || "Unknown"}`;
 
   workspaceStatus.innerHTML = `
     <strong>${escapeHtml(active.business_name)}</strong><br />
@@ -346,6 +371,61 @@ async function submitTransaction(event) {
   }
 }
 
+async function submitDocument(event) {
+  event.preventDefault();
+  const file = documentFile.files[0];
+  if (!file) {
+    documentStatus.textContent = "Choose a receipt, invoice, or PDF first.";
+    return;
+  }
+
+  documentSubmit.disabled = true;
+  documentStatus.textContent = "Uploading and reading document...";
+
+  const formData = new FormData();
+  formData.append("file", file);
+  formData.append("note", documentNote.value.trim());
+
+  const response = await fetch("/api/upload-document", {
+    method: "POST",
+    body: formData,
+  });
+  const payload = await response.json();
+  documentSubmit.disabled = false;
+  documentStatus.textContent = payload.message;
+
+  if (payload.status) {
+    updateStatus(payload.status, payload.presentation);
+  }
+  renderMessage("agent", payload.message, payload.presentation);
+
+  if (payload.ok) {
+    documentForm.reset();
+  }
+
+  if (speakReplies && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(payload.message));
+  }
+}
+
+async function approveDocumentDraft(token) {
+  const response = await fetch("/api/approve-document-draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token }),
+  });
+  const payload = await response.json();
+  if (payload.status) {
+    updateStatus(payload.status, payload.presentation);
+  }
+  renderMessage("agent", payload.message, payload.presentation);
+  if (speakReplies && "speechSynthesis" in window) {
+    window.speechSynthesis.cancel();
+    window.speechSynthesis.speak(new SpeechSynthesisUtterance(payload.message));
+  }
+}
+
 function configureVoiceRecognition() {
   const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SpeechRecognition) {
@@ -390,9 +470,20 @@ chatForm.addEventListener("submit", async (event) => {
   await sendMessage(message);
 });
 
+chatLog.addEventListener("click", async (event) => {
+  const button = event.target.closest(".approval-button");
+  if (!button) {
+    return;
+  }
+  button.disabled = true;
+  button.textContent = "Posting...";
+  await approveDocumentDraft(button.dataset.approvalToken);
+});
+
 switchBusinessButton.addEventListener("click", switchBusiness);
 switchModelButton.addEventListener("click", switchModelMode);
 transactionForm.addEventListener("submit", submitTransaction);
+documentForm.addEventListener("submit", submitDocument);
 
 voiceButton.addEventListener("click", () => {
   if (!recognition) {

@@ -208,11 +208,13 @@ http://127.0.0.1:8000
 The web UI includes:
 - Chat interface
 - Business switcher
+- Model mode switcher for `fast` and `quality`
 - Browser voice input button
 - Optional spoken replies in the browser
 - Quick links to the active Google Sheet and Google Doc
 - Dashboard cards for transaction volume, income, expenses, and flagged actions
 - Structured transaction form for direct ledger posting
+- Document upload for invoices, receipts, PDFs, and images
 - Recent transaction snapshot from the active ledger
 - Structured accounting reply cards and verified ledger tables
 
@@ -333,6 +335,12 @@ python3 main.py
 ```bash
 brew install portaudio
 pip install pyaudio
+```
+
+- Image OCR for uploaded receipts requires Tesseract on macOS:
+
+```bash
+brew install tesseract
 ```
 
 - The code uses macOS `say` for spoken responses.

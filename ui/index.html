@@ -53,6 +53,7 @@
             <p class="eyebrow">Conversation</p>
             <h2>Talk To Your Accounting Partner</h2>
           </div>
+          <div id="hero-model-badge" class="hero-badge">Model mode: Fast</div>
           <div class="hero-actions">
             <button id="voice-button" class="secondary-button">Start Voice</button>
             <button id="speak-toggle" class="secondary-button active">Voice Replies On</button>
@@ -152,6 +153,34 @@
               <div id="recent-audits" class="recent-list"></div>
             </div>
           </section>
+        </section>
+
+        <section class="panel feature-panel">
+          <div class="feature-head">
+            <div>
+              <p class="eyebrow">Documents</p>
+              <h3>Upload Receipt Or Invoice</h3>
+            </div>
+            <p class="subtle">Send a PDF or photo and let CPA-Agent read it into the active business workflow.</p>
+          </div>
+          <form id="document-form" class="transaction-form">
+            <label>
+              <span>Document</span>
+              <input id="document-file" type="file" accept=".pdf,image/*,.txt,.csv" required />
+            </label>
+            <label>
+              <span>Instruction</span>
+              <textarea
+                id="document-note"
+                rows="3"
+                placeholder="Example: add these expenses in LayerMax3d and use the invoice details."
+              ></textarea>
+            </label>
+            <div class="composer-actions">
+              <span id="document-status" class="voice-status">Ready to process document</span>
+              <button id="document-submit" type="submit" class="primary-button">Upload Document</button>
+            </div>
+          </form>
         </section>
 
         <section id="chat-log" class="chat-log"></section>
