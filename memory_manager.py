@@ -10,8 +10,11 @@ class MemoryManager:
     def __init__(self, memory_root: Path) -> None:
         self.memory_root = Path(memory_root)
         self.long_term_dir = self.memory_root / "long_term"
+        self.knowledge_dir = self.memory_root / "knowledge"
         self.short_term_path = self.memory_root / "short_term.json"
         self.skill_memory_path = self.memory_root / "skill_memory.json"
+        self.transaction_audit_path = self.memory_root / "transaction_audit.json"
+        self.learned_sources_path = self.knowledge_dir / "learned_sources.json"
         self.state_path = self.memory_root / "active_business.json"
         self._ensure_files()
         self.current_business_key = self._load_active_business_key()
@@ -19,6 +22,7 @@ class MemoryManager:
     def _ensure_files(self) -> None:
         self.memory_root.mkdir(parents=True, exist_ok=True)
         self.long_term_dir.mkdir(parents=True, exist_ok=True)
+        self.knowledge_dir.mkdir(parents=True, exist_ok=True)
 
         if not self.short_term_path.exists():
             self.short_term_path.write_text(json.dumps({"conversation": []}, indent=2), encoding="utf-8")
@@ -27,6 +31,10 @@ class MemoryManager:
                 json.dumps({"history": [], "success_patterns": [], "failure_patterns": []}, indent=2),
                 encoding="utf-8",
             )
+        if not self.transaction_audit_path.exists():
+            self.transaction_audit_path.write_text(json.dumps({"entries": []}, indent=2), encoding="utf-8")
+        if not self.learned_sources_path.exists():
+            self.learned_sources_path.write_text(json.dumps({"entries": []}, indent=2), encoding="utf-8")
         if not self.state_path.exists():
             default_business = self._discover_business_keys()[0]
             self.state_path.write_text(json.dumps({"active_business": default_business}, indent=2), encoding="utf-8")
@@ -36,6 +44,9 @@ class MemoryManager:
         if not keys:
             raise FileNotFoundError("No business profiles exist under memory/long_term.")
         return sorted(keys)
+
+    def list_business_keys(self) -> list[str]:
+        return self._discover_business_keys()
 
     def _load_active_business_key(self) -> str:
         with self.state_path.open("r", encoding="utf-8") as handle:
@@ -93,6 +104,10 @@ class MemoryManager:
         with self.short_term_path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
 
+    def load_skill_memory(self) -> dict[str, Any]:
+        with self.skill_memory_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
     def reset_short_term_context(self) -> None:
         payload = {
             "active_business": self.current_business_key,
@@ -145,3 +160,23 @@ class MemoryManager:
             }
         )
         destination_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def record_transaction_audit(self, entry: dict[str, Any]) -> None:
+        with self.transaction_audit_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        payload.setdefault("entries", []).append(entry)
+        self.transaction_audit_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def load_transaction_audit(self) -> dict[str, Any]:
+        with self.transaction_audit_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def record_learned_source(self, entry: dict[str, Any]) -> None:
+        with self.learned_sources_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        payload.setdefault("entries", []).append(entry)
+        self.learned_sources_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def load_learned_sources(self) -> dict[str, Any]:
+        with self.learned_sources_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)

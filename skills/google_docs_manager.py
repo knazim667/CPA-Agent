@@ -11,11 +11,17 @@ class GoogleDocsManager:
         self.credentials_path = credentials_path or os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
         self.auth = GoogleWorkspaceAuth(self.credentials_path)
         self._docs_service = None
+        self._drive_service = None
 
     def _get_docs_service(self):
         if self._docs_service is None:
             self._docs_service = self.auth.build_service("docs", "v1")
         return self._docs_service
+
+    def _get_drive_service(self):
+        if self._drive_service is None:
+            self._drive_service = self.auth.build_service("drive", "v3")
+        return self._drive_service
 
     def create_document(self, title: str, initial_text: str | None = None) -> dict[str, Any]:
         document = self._get_docs_service().documents().create(body={"title": title}).execute()
@@ -42,3 +48,6 @@ class GoogleDocsManager:
                 ]
             },
         ).execute()
+
+    def rename_document(self, document_id: str, title: str) -> dict[str, Any]:
+        return self._get_drive_service().files().update(fileId=document_id, body={"name": title}).execute()

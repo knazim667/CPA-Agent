@@ -11,6 +11,9 @@ What works now:
 - Business-aware memory manager with separate silos for `Business_A` and `Business_B`.
 - Google Sheets skill template for reading, writing, and formatting ledger data.
 - Google Docs support for creating and appending working-paper notes.
+- Local web UI for chat, business switching, browser voice input, and quick links to Sheets and Docs.
+- Structured accounting answers in the UI for verified transaction results and account review summaries.
+- Learned knowledge memory for Google Sheets and Docs reference material.
 - Persona files and memory files are initialized.
 
 What still needs your setup:
@@ -94,6 +97,33 @@ python3 bootstrap_google_workspace.py
 python3 main.py
 ```
 
+## Web UI
+
+You can now run CPA-Agent with a local browser interface instead of terminal input.
+
+Start the UI server:
+
+```bash
+python3 web_app.py
+```
+
+Then open:
+
+```text
+http://127.0.0.1:8000
+```
+
+The web UI includes:
+- Chat interface
+- Business switcher
+- Browser voice input button
+- Optional spoken replies in the browser
+- Quick links to the active Google Sheet and Google Doc
+- Dashboard cards for transaction volume, income, expenses, and flagged actions
+- Structured transaction form for direct ledger posting
+- Recent transaction snapshot from the active ledger
+- Structured accounting reply cards and verified ledger tables
+
 If the business config has placeholder IDs, the bootstrap script or the agent itself will create:
 - a Google Sheet named `<Business Name> CPA Ledger`
 - a Google Doc named `<Business Name> CPA Notes`
@@ -176,27 +206,3 @@ pip install pyaudio
 - OAuth client secrets should stay local and must not be committed to Git.
 - Tax research and payroll logic are templates and still need production-grade rules before you rely on them.
 - This is not yet a substitute for final CPA, payroll, or legal review.
-
-## GitHub Status
-
-I updated the local repository only.
-
-Changes made locally:
-- Added `main.py`
-- Added `memory_manager.py`
-- Added `core/`
-- Added `skills/`
-- Added `skills.py`
-- Added `persona/`
-- Added `memory/`
-- Added `requirements.txt`
-- Added `.gitignore`
-- Rewrote this `README.md`
-
-Pushed to GitHub:
-- Nothing yet
-
-If you want, the next step can be either:
-- connect Google Sheets end to end, or
-- add Google Docs support, or
-- make the voice interface more reliable on Mac.

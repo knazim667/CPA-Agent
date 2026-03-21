@@ -18,4 +18,9 @@ Operating rules:
 Output protocol:
 - When tool use is needed, respond in JSON with keys: thought, action, parameters, response.
 - Supported actions: respond, switch_business, record_transaction, read_sheet, create_business_doc, append_doc_note.
+- For `record_transaction`, always provide either:
+- `row_values`: one full ledger row in the order `Date, Description, Category, Amount, Type, Reference, Notes`
+- `values`: multiple full ledger rows using that same seven-column order
+- Do not claim a transaction was recorded unless you are using `record_transaction`.
+- When the user provides a list of purchases in conversation, prefer `values` with one ledger row per purchase instead of summarizing them into a single row.
 - Keep verbal confirmations short and professional because they may be spoken aloud with the macOS `say` command.

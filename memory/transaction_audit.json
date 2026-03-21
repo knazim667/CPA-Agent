@@ -1,0 +1,150 @@
+{
+  "entries": [
+    {
+      "timestamp": 1774063816.610425,
+      "business": "Business_B",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "02/08/2026",
+          "3D Printer Creality v3 SE",
+          "Start\u2011up Costs",
+          "191.24",
+          "Expense",
+          "",
+          "Startup cost"
+        ],
+        [
+          "02/09/2026",
+          "Cable",
+          "Start\u2011up Costs",
+          "12.74",
+          "Expense",
+          "",
+          "Startup cost"
+        ],
+        [
+          "02/09/2026",
+          "Table and accessories",
+          "Start\u2011up Costs",
+          "105.09",
+          "Expense",
+          "",
+          "Startup cost"
+        ],
+        [
+          "02/09/2026",
+          "Printing local material for testing",
+          "Start\u2011up Costs",
+          "36.10",
+          "Expense",
+          "",
+          "Startup cost"
+        ],
+        [
+          "02/09/2026",
+          "Caliper and glue",
+          "Start\u2011up Costs",
+          "30.54",
+          "Expense",
+          "",
+          "Startup cost"
+        ],
+        [
+          "02/09/2026",
+          "Printer Nozzle",
+          "Start\u2011up Costs",
+          "13.80",
+          "Expense",
+          "",
+          "Startup cost"
+        ],
+        [
+          "02/09/2026",
+          "Sample of PLA Filament from Torwell Company",
+          "Start\u2011up Costs",
+          "58.00",
+          "Expense",
+          "",
+          "Startup cost"
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1zDYr0C1zZZiBt4RHuYIvsEMwK9PTEwFtJBhIWU5_h9A",
+        "updatedRange": "Ledger!A2:G8",
+        "updatedRows": 7,
+        "updatedColumns": 7,
+        "updatedCells": 49
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A2:G8",
+        "values": [
+          [
+            "02/08/2026",
+            "3D Printer Creality v3 SE",
+            "Start\u2011up Costs",
+            "191.24",
+            "Expense",
+            "",
+            "Startup cost"
+          ],
+          [
+            "02/09/2026",
+            "Cable",
+            "Start\u2011up Costs",
+            "12.74",
+            "Expense",
+            "",
+            "Startup cost"
+          ],
+          [
+            "02/09/2026",
+            "Table and accessories",
+            "Start\u2011up Costs",
+            "105.09",
+            "Expense",
+            "",
+            "Startup cost"
+          ],
+          [
+            "02/09/2026",
+            "Printing local material for testing",
+            "Start\u2011up Costs",
+            "36.1",
+            "Expense",
+            "",
+            "Startup cost"
+          ],
+          [
+            "02/09/2026",
+            "Caliper and glue",
+            "Start\u2011up Costs",
+            "30.54",
+            "Expense",
+            "",
+            "Startup cost"
+          ],
+          [
+            "02/09/2026",
+            "Printer Nozzle",
+            "Start\u2011up Costs",
+            "13.8",
+            "Expense",
+            "",
+            "Startup cost"
+          ],
+          [
+            "02/09/2026",
+            "Sample of PLA Filament from Torwell Company",
+            "Start\u2011up Costs",
+            "58",
+            "Expense",
+            "",
+            "Startup cost"
+          ]
+        ]
+      }
+    }
+  ]
+}
