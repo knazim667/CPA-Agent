@@ -1,6 +1,6 @@
 # CPA-Agent
 
-CPA-Agent is a local-first accounting assistant for macOS that uses Ollama for reasoning, Google Sheets for ledger work, business-specific memory silos, and voice input/output.
+CPA-Agent is a local-first accounting assistant for macOS that supports Ollama, OpenAI, or Gemini for reasoning, Google Sheets and Docs for workspace operations, business-specific memory silos, and voice input/output.
 
 ## Current Status
 
@@ -18,8 +18,9 @@ What works now:
 
 What still needs your setup:
 - Install dependencies.
-- Install and run Ollama locally.
-- Pull your target Ollama model.
+- Choose a model provider.
+- If you use Ollama, install and run it locally.
+- If you use OpenAI or Gemini, add your API or OAuth credentials.
 - Create Google OAuth Desktop App credentials.
   If you do not have any Sheets or Docs yet, CPA-Agent can create them automatically.
 
@@ -28,7 +29,10 @@ What still needs your setup:
 ```text
 CPA-Agent/
 ├── core/
-│   └── ollama_client.py
+│   ├── gemini_client.py
+│   ├── model_client.py
+│   ├── ollama_client.py
+│   └── openai_client.py
 ├── skills/
 │   ├── google_sheets_manager.py
 │   ├── payroll_engine.py
@@ -45,8 +49,103 @@ CPA-Agent/
 │   └── custom_rules.json
 ├── main.py
 ├── memory_manager.py
+├── authorize_gemini_oauth.py
 ├── skills.py
 └── requirements.txt
+```
+
+## Model Provider Setup
+
+CPA-Agent now supports three reasoning providers:
+- `ollama`
+- `openai`
+- `gemini`
+
+Set `MODEL_PROVIDER` before you run the app.
+
+### Ollama
+
+1. Install Ollama on your Mac and start it.
+2. Pull the model you want to use:
+
+```bash
+ollama pull gpt-oss:20b
+```
+
+3. Export:
+
+```bash
+export MODEL_PROVIDER="ollama"
+export OLLAMA_MODEL="gpt-oss:20b"
+```
+
+Recommended multi-model local setup:
+
+```bash
+ollama pull gpt-oss:20b
+ollama pull llama3.3:70b
+ollama pull deepseek-r1:32b
+
+export MODEL_PROVIDER="ollama"
+export OLLAMA_MODEL="gpt-oss:20b"
+export OLLAMA_QUALITY_MODEL="llama3.3:70b"
+export OLLAMA_REFLECTION_MODEL="deepseek-r1:32b"
+export CPA_AGENT_REASONING_MODE="fast"
+```
+
+How this setup works:
+- `OLLAMA_MODEL` is the default fast operating model.
+- `OLLAMA_QUALITY_MODEL` is the higher-quality reasoning option.
+- `OLLAMA_REFLECTION_MODEL` is used for the self-check and audit pass.
+- `CPA_AGENT_REASONING_MODE="fast"` uses `gpt-oss:20b` for normal work.
+- `CPA_AGENT_REASONING_MODE="quality"` uses `llama3.3:70b` for normal work.
+
+### OpenAI API
+
+Use this if you want CPA-Agent to call OpenAI models over the API.
+
+```bash
+export MODEL_PROVIDER="openai"
+export OPENAI_API_KEY="your-openai-api-key"
+export OPENAI_MODEL="gpt-4o-mini"
+```
+
+Optional:
+
+```bash
+export OPENAI_ORGANIZATION="your-org-id"
+export OPENAI_PROJECT="your-project-id"
+```
+
+Important:
+- OpenAI model access for this app uses API keys.
+- A normal ChatGPT account login is not the standard server-side auth path for model API calls.
+- If you want to use OpenAI here, use an OpenAI API key.
+
+### Gemini API Key
+
+```bash
+export MODEL_PROVIDER="gemini"
+export GEMINI_API_KEY="your-gemini-api-key"
+export GEMINI_MODEL="gemini-2.5-flash"
+```
+
+### Gemini OAuth
+
+If you prefer OAuth instead of an API key:
+
+```bash
+export MODEL_PROVIDER="gemini"
+export GOOGLE_GENAI_CLIENT_SECRET_FILE="/absolute/path/to/your-gemini-oauth-client.json"
+export GEMINI_MODEL="gemini-2.5-flash"
+python3 authorize_gemini_oauth.py
+```
+
+Optional:
+
+```bash
+export GOOGLE_GENAI_TOKEN_FILE="credentials/gemini-token.json"
+export GOOGLE_CLOUD_PROJECT="your-google-cloud-project-id"
 ```
 
 ## How To Run
@@ -64,34 +163,27 @@ source .venv/bin/activate
 pip install -r requirements.txt
 ```
 
-3. Install Ollama on your Mac and start it.
+3. Set your model provider environment variables from the section above.
 
-4. Pull the model you want to use:
-
-```bash
-ollama pull gpt-oss:20b
-```
-
-5. Set environment variables:
+4. Set Google Workspace environment variables:
 
 ```bash
-export OLLAMA_MODEL="gpt-oss:20b"
 export GOOGLE_OAUTH_CLIENT_SECRET_FILE="/absolute/path/to/your-oauth-client.json"
 ```
 
-6. Authorize once in your browser:
+5. Authorize Google Workspace once in your browser:
 
 ```bash
 python3 authorize_google_oauth.py
 ```
 
-7. Optional bootstrap step to auto-create one Google Sheet and one Google Doc per business:
+6. Optional bootstrap step to auto-create one Google Sheet and one Google Doc per business:
 
 ```bash
 python3 bootstrap_google_workspace.py
 ```
 
-8. Start the agent:
+7. Start the agent:
 
 ```bash
 python3 main.py
@@ -132,7 +224,7 @@ The created IDs will be written back into the business config files automaticall
 
 ## Google Sheets And Docs Access
 
-CPA-Agent now supports both Google Sheets and Google Docs through OAuth2 or a service account JSON key.
+CPA-Agent supports Google Sheets and Google Docs through OAuth2 or a service account JSON key.
 
 If a business has no Sheet or Doc yet, CPA-Agent can create them automatically.
 
@@ -190,6 +282,50 @@ OAuth2 is the easiest connection path because it uses your own Google account di
 
 Service-account auth is still supported as a fallback for automation, but it is no longer the easiest recommended setup.
 
+## Provider Examples
+
+### Run with Ollama
+
+```bash
+export MODEL_PROVIDER="ollama"
+export OLLAMA_MODEL="gpt-oss:20b"
+export OLLAMA_QUALITY_MODEL="llama3.3:70b"
+export OLLAMA_REFLECTION_MODEL="deepseek-r1:32b"
+export CPA_AGENT_REASONING_MODE="fast"
+export GOOGLE_OAUTH_CLIENT_SECRET_FILE="/absolute/path/to/your-oauth-client.json"
+python3 main.py
+```
+
+### Run with OpenAI
+
+```bash
+export MODEL_PROVIDER="openai"
+export OPENAI_API_KEY="your-openai-api-key"
+export OPENAI_MODEL="gpt-4o-mini"
+export GOOGLE_OAUTH_CLIENT_SECRET_FILE="/absolute/path/to/your-oauth-client.json"
+python3 main.py
+```
+
+### Run with Gemini API Key
+
+```bash
+export MODEL_PROVIDER="gemini"
+export GEMINI_API_KEY="your-gemini-api-key"
+export GEMINI_MODEL="gemini-2.5-flash"
+export GOOGLE_OAUTH_CLIENT_SECRET_FILE="/absolute/path/to/your-oauth-client.json"
+python3 main.py
+```
+
+### Run with Gemini OAuth
+
+```bash
+export MODEL_PROVIDER="gemini"
+export GOOGLE_GENAI_CLIENT_SECRET_FILE="/absolute/path/to/your-gemini-oauth-client.json"
+export GOOGLE_OAUTH_CLIENT_SECRET_FILE="/absolute/path/to/your-google-workspace-oauth-client.json"
+python3 authorize_gemini_oauth.py
+python3 main.py
+```
+
 ## Important Notes
 
 - `PyAudio` may need PortAudio installed on macOS. If `pip install` fails, install it with Homebrew:
@@ -201,8 +337,8 @@ pip install pyaudio
 
 - The code uses macOS `say` for spoken responses.
 - The speech flow uses Google speech recognition through the `SpeechRecognition` package.
-- The service account email detected from your JSON is `cpa-agent@cpa-agent-490901.iam.gserviceaccount.com`.
 - OAuth tokens are stored locally in `credentials/google-token.json`.
+- Gemini OAuth tokens are stored locally in `credentials/gemini-token.json`.
 - OAuth client secrets should stay local and must not be committed to Git.
 - Tax research and payroll logic are templates and still need production-grade rules before you rely on them.
 - This is not yet a substitute for final CPA, payroll, or legal review.

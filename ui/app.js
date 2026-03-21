@@ -3,6 +3,9 @@ const chatForm = document.getElementById("chat-form");
 const messageInput = document.getElementById("message-input");
 const businessSelect = document.getElementById("business-select");
 const switchBusinessButton = document.getElementById("switch-business-button");
+const modelModeSelect = document.getElementById("model-mode-select");
+const switchModelButton = document.getElementById("switch-model-button");
+const modelStatus = document.getElementById("model-status");
 const workspaceStatus = document.getElementById("workspace-status");
 const bootWarning = document.getElementById("boot-warning");
 const sheetLink = document.getElementById("sheet-link");
@@ -148,6 +151,7 @@ function updateStatus(status, latestPresentation = null) {
   const active = status.active_business;
   const businesses = status.businesses || [];
   const dashboard = status.dashboard || {};
+  const modelConfig = status.model_config || {};
 
   businessSelect.innerHTML = businesses
     .map(
@@ -157,6 +161,14 @@ function updateStatus(status, latestPresentation = null) {
         }>${escapeHtml(business.business_name)}</option>`,
     )
     .join("");
+
+  modelModeSelect.value = modelConfig.reasoning_mode || "fast";
+  modelStatus.innerHTML = `
+    <strong>${escapeHtml((modelConfig.provider || "ollama").toUpperCase())}</strong><br />
+    Mode: ${escapeHtml(modelConfig.reasoning_mode || "fast")}<br />
+    Primary: ${escapeHtml(modelConfig.reasoning_model || "Unknown")}<br />
+    Audit: ${escapeHtml(modelConfig.reflection_model || "Unknown")}
+  `;
 
   workspaceStatus.innerHTML = `
     <strong>${escapeHtml(active.business_name)}</strong><br />
@@ -281,6 +293,23 @@ async function switchBusiness() {
   renderMessage("agent", payload.message);
 }
 
+async function switchModelMode() {
+  switchModelButton.disabled = true;
+  const response = await fetch("/api/model-mode", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ mode: modelModeSelect.value }),
+  });
+  const payload = await response.json();
+  switchModelButton.disabled = false;
+  if (!response.ok) {
+    renderMessage("agent", payload.detail || "Could not update model mode.");
+    return;
+  }
+  updateStatus(payload.status);
+  renderMessage("agent", payload.message);
+}
+
 async function submitTransaction(event) {
   event.preventDefault();
   transactionSubmit.disabled = true;
@@ -362,6 +391,7 @@ chatForm.addEventListener("submit", async (event) => {
 });
 
 switchBusinessButton.addEventListener("click", switchBusiness);
+switchModelButton.addEventListener("click", switchModelMode);
 transactionForm.addEventListener("submit", submitTransaction);
 
 voiceButton.addEventListener("click", () => {

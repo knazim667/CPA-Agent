@@ -30,6 +30,10 @@ class BusinessSwitchRequest(BaseModel):
     business_name: str
 
 
+class ModelModeRequest(BaseModel):
+    mode: str
+
+
 class TransactionRequest(BaseModel):
     date: str
     description: str
@@ -96,6 +100,25 @@ def switch_business(payload: BusinessSwitchRequest) -> dict[str, Any]:
             }
         except Exception as exc:  # noqa: BLE001
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/model-mode")
+def set_model_mode(payload: ModelModeRequest) -> dict[str, Any]:
+    mode = payload.mode.strip().lower()
+    if mode not in {"fast", "quality"}:
+        raise HTTPException(status_code=400, detail="Mode must be 'fast' or 'quality'.")
+
+    with agent_lock:
+        config = agent.set_reasoning_mode(mode)
+        return {
+            "ok": True,
+            "message": (
+                f"Reasoning mode set to {config['reasoning_mode']}. "
+                f"Primary model: {config['reasoning_model']}. "
+                f"Reflection model: {config['reflection_model']}."
+            ),
+            "status": agent.get_status(),
+        }
 
 
 @app.post("/api/record-transaction")

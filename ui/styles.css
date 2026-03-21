@@ -91,6 +91,11 @@ body {
   border: 1px solid var(--line);
 }
 
+.panel button,
+.panel select + button {
+  margin-top: 10px;
+}
+
 .panel-label {
   margin: 0 0 10px;
   font-size: 0.88rem;

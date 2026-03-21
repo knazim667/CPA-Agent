@@ -13,7 +13,7 @@ from urllib.parse import urlparse
 import requests
 import speech_recognition as sr
 
-from core.ollama_client import OllamaClient
+from core.model_client import get_model_client
 from memory_manager import MemoryManager
 from skills import GoogleDocsManager, GoogleSheetsManager, KnowledgeManager
 
@@ -37,7 +37,10 @@ class CPAAgent:
 
     def __init__(self) -> None:
         self.memory = MemoryManager(ROOT_DIR / "memory")
-        self.ollama = OllamaClient()
+        self.reasoning_mode = self._normalize_reasoning_mode(
+            os.getenv("CPA_AGENT_REASONING_MODE", "fast")
+        )
+        self._refresh_model_clients()
         self.sheets = GoogleSheetsManager()
         self.docs = GoogleDocsManager()
         self.knowledge = KnowledgeManager()
@@ -51,6 +54,21 @@ class CPAAgent:
             self.ensure_business_workspace_assets()
         except Exception as exc:  # noqa: BLE001
             self.workspace_boot_error = str(exc)
+
+    @staticmethod
+    def _normalize_reasoning_mode(value: str) -> str:
+        normalized = (value or "fast").strip().lower()
+        return normalized if normalized in {"fast", "quality"} else "fast"
+
+    def _refresh_model_clients(self) -> None:
+        self.model_client = get_model_client(purpose="reasoning", reasoning_mode=self.reasoning_mode)
+        self.reflection_client = get_model_client(purpose="reflection", reasoning_mode=self.reasoning_mode)
+
+    def set_reasoning_mode(self, mode: str) -> dict[str, str]:
+        self.reasoning_mode = self._normalize_reasoning_mode(mode)
+        os.environ["CPA_AGENT_REASONING_MODE"] = self.reasoning_mode
+        self._refresh_model_clients()
+        return self.get_model_status()
 
     def _determine_input_mode(self) -> str:
         forced_mode = os.getenv("CPA_AGENT_INPUT_MODE", "").strip().lower()
@@ -128,7 +146,7 @@ class CPAAgent:
         ]
 
     def run_reasoning(self, user_input: str) -> dict[str, Any]:
-        response_text = self.ollama.chat(self.build_messages(user_input))
+        response_text = self.model_client.chat(self.build_messages(user_input))
         return self.extract_action_plan(response_text)
 
     def extract_action_plan(self, response_text: str) -> dict[str, Any]:
@@ -157,6 +175,43 @@ class CPAAgent:
                 "status": "success",
                 "message": f"Switched to {new_profile['business_name']}.",
                 "details": new_profile,
+            }
+
+        if action == "create_business":
+            business_name = parameters.get("business_name") or self.detect_business_creation(user_input)
+            if not business_name:
+                raise ValueError("Business creation requested without a business name.")
+            state = parameters.get("state", "")
+            currency = parameters.get("default_books_currency", "USD")
+            business_key, profile, created = self.memory.create_business(
+                business_name,
+                state=state,
+                default_currency=currency,
+            )
+            sheet_url = None
+            self.workspace_boot_error = None
+            try:
+                profile = self.ensure_business_workspace_assets()
+                sheet_url = self._sheet_url(profile["google_sheet_id"])
+            except Exception as exc:  # noqa: BLE001
+                self.workspace_boot_error = str(exc)
+            status = "success" if created else "noop"
+            prefix = "Created" if created else "Switched to existing"
+            message = f"{prefix} business {profile['business_name']}."
+            if sheet_url:
+                message = f"{message} Sheet: {sheet_url}"
+            elif self.workspace_boot_error:
+                message = f"{message} Local silo is ready, but Google workspace setup still needs attention."
+            return {
+                "status": status,
+                "message": message,
+                "details": {
+                    "business_key": business_key,
+                    "created": created,
+                    "profile": profile,
+                    "sheet_url": sheet_url,
+                    "workspace_boot_error": self.workspace_boot_error,
+                },
             }
 
         if action == "record_transaction":
@@ -462,8 +517,35 @@ class CPAAgent:
             "conversation": short_term.get("conversation", []),
             "workspace_boot_error": self.workspace_boot_error,
             "input_mode": self.input_mode,
+            "model_config": self.get_model_status(),
             "dashboard": self.get_dashboard_snapshot(),
             "learned_source_count": len(self.memory.load_learned_sources().get("entries", [])),
+        }
+
+    def get_model_status(self) -> dict[str, str]:
+        provider = os.getenv("MODEL_PROVIDER", "ollama").strip().lower() or "ollama"
+        if provider == "ollama":
+            reasoning_model = (
+                os.getenv("OLLAMA_QUALITY_MODEL")
+                if self.reasoning_mode == "quality" and os.getenv("OLLAMA_QUALITY_MODEL")
+                else os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
+            )
+            reflection_model = (
+                os.getenv("OLLAMA_REFLECTION_MODEL")
+                or os.getenv("OLLAMA_AUDIT_MODEL")
+                or reasoning_model
+            )
+        elif provider == "openai":
+            reasoning_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            reflection_model = reasoning_model
+        else:
+            reasoning_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+            reflection_model = reasoning_model
+        return {
+            "provider": provider,
+            "reasoning_mode": self.reasoning_mode,
+            "reasoning_model": reasoning_model,
+            "reflection_model": reflection_model,
         }
 
     def _summarize_ledger_rows(self, rows: list[list[Any]]) -> dict[str, Any]:
@@ -754,7 +836,7 @@ class CPAAgent:
                 ),
             },
         ]
-        reflection_text = self.ollama.chat(reflection_prompt)
+        reflection_text = self.reflection_client.chat(reflection_prompt)
         try:
             start = reflection_text.index("{")
             end = reflection_text.rindex("}") + 1
@@ -791,6 +873,21 @@ class CPAAgent:
             match = re.search(pattern, user_input, re.IGNORECASE)
             if match:
                 return match.group(1).strip(" .")
+        return None
+
+    def detect_business_creation(self, user_input: str) -> str | None:
+        patterns = (
+            r"(?:i\s+(?:started|launched|opened)|we\s+(?:started|launched|opened))\s+(?:a\s+)?(?:new\s+)?business(?:\s+called|\s+named)?\s+([A-Za-z0-9][A-Za-z0-9 &._-]*)",
+            r"(?:create|add|set\s+up|setup)\s+(?:a\s+)?(?:new\s+)?business(?:\s+called|\s+named)?\s+([A-Za-z0-9][A-Za-z0-9 &._-]*)",
+            r"(?:create|add)\s+business\s+([A-Za-z0-9][A-Za-z0-9 &._-]*)",
+        )
+        for pattern in patterns:
+            match = re.search(pattern, user_input, re.IGNORECASE)
+            if match:
+                candidate = match.group(1).strip(" .")
+                candidate = re.sub(r"\s+(please|for me|now)$", "", candidate, flags=re.IGNORECASE)
+                if candidate:
+                    return candidate
         return None
 
     @staticmethod
@@ -855,6 +952,39 @@ class CPAAgent:
                 "I'll use this knowledge for future Google Sheets and Docs work."
             )
             self.update_short_term_memory(user_input, {"message": message, "details": result})
+            return message
+
+        create_target = self.detect_business_creation(user_input)
+        if create_target:
+            business_key, profile, created = self.memory.create_business(create_target)
+            sheet_url = None
+            self.workspace_boot_error = None
+            try:
+                profile = self.ensure_business_workspace_assets()
+                sheet_url = self._sheet_url(profile["google_sheet_id"])
+            except Exception as exc:  # noqa: BLE001
+                self.workspace_boot_error = str(exc)
+            if created:
+                message = f"Created a new business silo for {profile['business_name']} and switched to it."
+            else:
+                message = f"{profile['business_name']} already existed, so I switched to it."
+            if sheet_url:
+                message = f"{message} Sheet: {sheet_url}"
+            elif self.workspace_boot_error:
+                message = f"{message} The local folder and config are ready, but Google workspace setup still needs attention."
+            self.update_short_term_memory(
+                user_input,
+                {
+                    "message": message,
+                    "details": {
+                        "business_key": business_key,
+                        "created": created,
+                        "profile": profile,
+                        "sheet_url": sheet_url,
+                        "workspace_boot_error": self.workspace_boot_error,
+                    },
+                },
+            )
             return message
 
         switch_target = self.detect_business_switch(user_input)

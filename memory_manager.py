@@ -53,6 +53,14 @@ class MemoryManager:
             payload = json.load(handle)
         return payload["active_business"]
 
+    @staticmethod
+    def normalize_business_key(name: str) -> str:
+        normalized = "".join(char if char.isalnum() else "_" for char in name.strip().lower())
+        normalized = normalized.strip("_")
+        while "__" in normalized:
+            normalized = normalized.replace("__", "_")
+        return normalized or "business"
+
     def _write_active_business_key(self, business_key: str) -> None:
         self.state_path.write_text(json.dumps({"active_business": business_key}, indent=2), encoding="utf-8")
         self.current_business_key = business_key
@@ -71,6 +79,55 @@ class MemoryManager:
         profile_path = self._profile_path(business_key)
         profile_path.parent.mkdir(parents=True, exist_ok=True)
         profile_path.write_text(json.dumps(profile, indent=2), encoding="utf-8")
+
+    def create_business(
+        self,
+        business_name: str,
+        *,
+        state: str = "",
+        default_currency: str = "USD",
+    ) -> tuple[str, dict[str, Any], bool]:
+        cleaned_name = business_name.strip()
+        if not cleaned_name:
+            raise ValueError("Business name is required.")
+
+        existing_keys = self._discover_business_keys()
+        existing_by_name = {
+            self.load_business_profile(key)["business_name"].strip().lower(): key
+            for key in existing_keys
+        }
+        existing_key = existing_by_name.get(cleaned_name.lower())
+        if existing_key:
+            profile = self.load_business_profile(existing_key)
+            self._write_active_business_key(existing_key)
+            self.reset_short_term_context()
+            return existing_key, profile, False
+
+        base_key = self.normalize_business_key(cleaned_name)
+        business_key = base_key
+        suffix = 2
+        while business_key in existing_keys:
+            business_key = f"{base_key}_{suffix}"
+            suffix += 1
+
+        db_name = f"{business_key}.db"
+        profile = {
+            "business_name": cleaned_name,
+            "google_sheet_id": "replace-with-sheet-id",
+            "google_doc_id": "replace-with-doc-id",
+            "local_memory_db": f"memory/long_term/{business_key}/{db_name}",
+            "federal_ein": "",
+            "state": state.strip().upper(),
+            "default_books_currency": default_currency.strip().upper() or "USD",
+        }
+        profile_path = self._profile_path(business_key)
+        profile_path.parent.mkdir(parents=True, exist_ok=True)
+        local_db_path = profile_path.parent / db_name
+        local_db_path.touch(exist_ok=True)
+        self.save_business_profile(business_key, profile)
+        self._write_active_business_key(business_key)
+        self.reset_short_term_context()
+        return business_key, profile, True
 
     def update_business_profile(self, business_key: str, updates: dict[str, Any]) -> dict[str, Any]:
         profile = self.load_business_profile(business_key)
