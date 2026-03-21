@@ -1,0 +1,30 @@
+__pycache__/
+*.py[cod]
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+.env
+.venv/
+venv/
+env/
+
+# Local credentials and secrets
+credentials/
+service-account*.json
+google-service-account*.json
+oauth-client*.json
+token*.json
+
+# Local memory/runtime artifacts
+memory/short_term.json
+memory/skill_memory.json
+memory/active_business.json
+memory/long_term/*/*.db
+
+# Editor and test artifacts
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.idea/
+.vscode/

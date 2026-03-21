@@ -1,0 +1,147 @@
+from __future__ import annotations
+
+import json
+import time
+from pathlib import Path
+from typing import Any
+
+
+class MemoryManager:
+    def __init__(self, memory_root: Path) -> None:
+        self.memory_root = Path(memory_root)
+        self.long_term_dir = self.memory_root / "long_term"
+        self.short_term_path = self.memory_root / "short_term.json"
+        self.skill_memory_path = self.memory_root / "skill_memory.json"
+        self.state_path = self.memory_root / "active_business.json"
+        self._ensure_files()
+        self.current_business_key = self._load_active_business_key()
+
+    def _ensure_files(self) -> None:
+        self.memory_root.mkdir(parents=True, exist_ok=True)
+        self.long_term_dir.mkdir(parents=True, exist_ok=True)
+
+        if not self.short_term_path.exists():
+            self.short_term_path.write_text(json.dumps({"conversation": []}, indent=2), encoding="utf-8")
+        if not self.skill_memory_path.exists():
+            self.skill_memory_path.write_text(
+                json.dumps({"history": [], "success_patterns": [], "failure_patterns": []}, indent=2),
+                encoding="utf-8",
+            )
+        if not self.state_path.exists():
+            default_business = self._discover_business_keys()[0]
+            self.state_path.write_text(json.dumps({"active_business": default_business}, indent=2), encoding="utf-8")
+
+    def _discover_business_keys(self) -> list[str]:
+        keys = [path.name for path in self.long_term_dir.iterdir() if path.is_dir()]
+        if not keys:
+            raise FileNotFoundError("No business profiles exist under memory/long_term.")
+        return sorted(keys)
+
+    def _load_active_business_key(self) -> str:
+        with self.state_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+        return payload["active_business"]
+
+    def _write_active_business_key(self, business_key: str) -> None:
+        self.state_path.write_text(json.dumps({"active_business": business_key}, indent=2), encoding="utf-8")
+        self.current_business_key = business_key
+
+    def _profile_path(self, business_key: str) -> Path:
+        return self.long_term_dir / business_key / "config.json"
+
+    def load_business_profile(self, business_key: str) -> dict[str, Any]:
+        profile_path = self._profile_path(business_key)
+        if not profile_path.exists():
+            raise FileNotFoundError(f"Business profile not found for {business_key}.")
+        with profile_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def save_business_profile(self, business_key: str, profile: dict[str, Any]) -> None:
+        profile_path = self._profile_path(business_key)
+        profile_path.parent.mkdir(parents=True, exist_ok=True)
+        profile_path.write_text(json.dumps(profile, indent=2), encoding="utf-8")
+
+    def update_business_profile(self, business_key: str, updates: dict[str, Any]) -> dict[str, Any]:
+        profile = self.load_business_profile(business_key)
+        profile.update(updates)
+        self.save_business_profile(business_key, profile)
+        return profile
+
+    def switch_business(self, business_name: str) -> dict[str, Any]:
+        normalized = business_name.strip().lower().replace(" ", "_").replace("-", "_")
+        candidates = {key.lower(): key for key in self._discover_business_keys()}
+        if normalized in candidates:
+            business_key = candidates[normalized]
+        else:
+            by_display_name = {
+                self.load_business_profile(key)["business_name"].lower(): key
+                for key in self._discover_business_keys()
+            }
+            if business_name.strip().lower() not in by_display_name:
+                raise ValueError(f"Unknown business '{business_name}'.")
+            business_key = by_display_name[business_name.strip().lower()]
+
+        profile = self.load_business_profile(business_key)
+        self._write_active_business_key(business_key)
+        self.reset_short_term_context()
+        return profile
+
+    def get_current_business(self) -> dict[str, Any]:
+        return self.load_business_profile(self.current_business_key)
+
+    def load_short_term_context(self) -> dict[str, Any]:
+        with self.short_term_path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def reset_short_term_context(self) -> None:
+        payload = {
+            "active_business": self.current_business_key,
+            "conversation": [],
+            "last_reset": time.time(),
+        }
+        self.short_term_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def append_conversation_entry(self, entry: dict[str, Any]) -> None:
+        payload = self.load_short_term_context()
+        payload.setdefault("active_business", self.current_business_key)
+        payload.setdefault("conversation", []).append(entry)
+        self.short_term_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def record_skill_outcome(self, action_name: str, success: bool, details: dict[str, Any]) -> None:
+        with self.skill_memory_path.open("r", encoding="utf-8") as handle:
+            payload = json.load(handle)
+
+        record = {
+            "timestamp": time.time(),
+            "business": self.current_business_key,
+            "action_name": action_name,
+            "success": success,
+            "details": details,
+        }
+        payload.setdefault("history", []).append(record)
+
+        bucket = "success_patterns" if success else "failure_patterns"
+        payload.setdefault(bucket, []).append(
+            {
+                "action_name": action_name,
+                "business": self.current_business_key,
+                "timestamp": record["timestamp"],
+            }
+        )
+        self.skill_memory_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+
+    def record_custom_rule(self, user_input: str, destination_path: Path) -> None:
+        if destination_path.exists():
+            with destination_path.open("r", encoding="utf-8") as handle:
+                payload = json.load(handle)
+        else:
+            payload = {"rules": []}
+
+        payload.setdefault("rules", []).append(
+            {
+                "timestamp": time.time(),
+                "business": self.current_business_key,
+                "rule": user_input.strip(),
+            }
+        )
+        destination_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")

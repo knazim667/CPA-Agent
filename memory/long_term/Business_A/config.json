@@ -1,0 +1,9 @@
+{
+  "business_name": "Business A",
+  "google_sheet_id": "1aryPX5AQIHzwPsO4tcHI_AinyXzlzSGAqy0HB8FudzQ",
+  "google_doc_id": "1FPYYhXbRyxwl5p3JAoQUgbtxvE89ei-Gf8ZYhCxzFUs",
+  "local_memory_db": "memory/long_term/Business_A/business_a.db",
+  "federal_ein": "xx-xxxxxxx",
+  "state": "NY",
+  "default_books_currency": "USD"
+}
