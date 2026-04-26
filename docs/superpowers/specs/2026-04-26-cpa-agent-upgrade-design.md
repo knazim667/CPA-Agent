@@ -77,7 +77,7 @@ OPENROUTER_MODEL=nvidia/nemotron-3-super-120b-a12b:free
 - Add `calculate_payroll` as a recognized action in `execute_action()`
 - Parameters: `gross_pay` (float), `federal_rate` (float, optional, default 0.12)
 - Returns structured result with `gross_pay`, `federal_withholding`, `social_security`, `medicare`, `net_pay`
-- Also add the payroll result as a transaction row in the ledger (net pay as expense, optional)
+- Does NOT auto-post to ledger; returns calculation only so the user can review and post manually if desired
 
 #### Tax researcher stub not integrated
 **File:** `skills/tax_researcher.py`, `main.py`
@@ -226,8 +226,13 @@ Replaces the fixed two-column sidebar layout.
 
 #### Settings Slide-Over
 - Opens from the gear icon in the top bar
-- Contains: model mode selector (Fast / Quality / OpenRouter), workspace links (Sheet, Doc), learned sources count
+- Contains two distinct selectors:
+  - **Provider selector** (dropdown): Ollama / OpenAI / Gemini / OpenRouter — calls new `POST /api/provider` endpoint
+  - **Reasoning mode selector** (Fast / Quality) — only meaningful for Ollama multi-model setup; calls existing `POST /api/model-mode`
+- Also contains: workspace links (Sheet, Doc), learned sources count
 - Closes on backdrop click or Escape key
+
+**New endpoint required:** `POST /api/provider` — accepts `{ "provider": "openrouter" }`, sets `MODEL_PROVIDER` env var at runtime and refreshes model clients
 
 ### 4.5 Files Changed
 
@@ -244,7 +249,7 @@ Replaces the fixed two-column sidebar layout.
 1. `core/openrouter_client.py` — new file
 2. `core/model_client.py` — add openrouter branch
 3. `main.py` — fix date inference, fix row limit, wire payroll + tax actions
-4. `web_app.py` — fix memory leak, add `/api/report/pl`, `/api/export/csv`, `/api/ledger`
+4. `web_app.py` — fix memory leak, add `/api/report/pl`, `/api/export/csv`, `/api/ledger`, `/api/provider`
 5. `skills/__init__.py` — no export changes needed (payroll/tax accessed directly in main.py)
 6. `ui/index.html` — full rewrite
 7. `ui/styles.css` — full rewrite
@@ -256,6 +261,7 @@ Replaces the fixed two-column sidebar layout.
 
 - [ ] `MODEL_PROVIDER=openrouter` routes all LLM calls through `https://openrouter.ai/api/v1`
 - [ ] Setting `OPENROUTER_MODEL` to any model ID is respected
+- [ ] `POST /api/provider` switches provider at runtime without restarting the server
 - [ ] `pending_document_drafts` entries older than 1 hour are evicted automatically
 - [ ] Date inference works without any hardcoded product keywords
 - [ ] Ledger read is not capped at 50 rows
