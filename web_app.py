@@ -9,6 +9,10 @@ from pathlib import Path
 from threading import Lock
 from typing import Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -73,6 +77,11 @@ class TransactionRequest(BaseModel):
 
 class ApprovalRequest(BaseModel):
     token: str
+
+
+class CategoryRuleRequest(BaseModel):
+    description: str
+    category: str
 
 
 @app.get("/")
@@ -414,6 +423,23 @@ def approve_document_draft(payload: ApprovalRequest) -> dict[str, Any]:
                 "status": agent.get_status(),
                 "presentation": None,
             }
+
+
+@app.get("/api/category/suggest")
+def suggest_category(description: str = "") -> dict:
+    if not description:
+        raise HTTPException(status_code=400, detail="description is required")
+    with agent_lock:
+        result = agent.categorization.suggest_category(description)
+        return result if result else {"category": None, "confidence": 0.0, "rule_id": None}
+
+
+@app.post("/api/category-rule")
+def save_category_rule(payload: CategoryRuleRequest) -> dict:
+    with agent_lock:
+        rule = agent.categorization.save_rule(payload.description, payload.category)
+        agent._save_category_rules()
+        return {"ok": True, "rule": rule}
 
 
 def main() -> int:

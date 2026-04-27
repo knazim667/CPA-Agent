@@ -16,6 +16,7 @@ import speech_recognition as sr
 from core.model_client import get_model_client
 from memory_manager import MemoryManager
 from skills import GoogleDocsManager, GoogleSheetsManager, KnowledgeManager
+from skills.categorization_engine import CategorizationEngine
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -44,6 +45,22 @@ class CPAAgent:
         self.sheets = GoogleSheetsManager()
         self.docs = GoogleDocsManager()
         self.knowledge = KnowledgeManager()
+        self.categorization = CategorizationEngine(
+            rules_data=self.memory.load_category_rules()
+        )
+        if not self.categorization._rules:
+            try:
+                profile = self.memory.get_current_business()
+                if profile.get("google_sheet_id"):
+                    rows = self.sheets.read_range(
+                        spreadsheet_id=profile["google_sheet_id"],
+                        range_name="Ledger!A2:G200",
+                    )
+                    count = self.categorization.backfill_rules_from_ledger(rows)
+                    if count:
+                        self._save_category_rules()
+            except Exception:  # noqa: BLE001
+                pass  # backfill is best-effort; don't block startup
         self.recognizer = sr.Recognizer()
         self.recognizer.pause_threshold = 0.8
         self.wake_words = ("hey cpa-agent", "hey cpa agent", "cpa-agent", "cpa agent")
@@ -85,6 +102,9 @@ class CPAAgent:
         self.system_prompt = SYSTEM_PROMPT_PATH.read_text(encoding="utf-8")
         with CUSTOM_RULES_PATH.open("r", encoding="utf-8") as handle:
             self.custom_rules = json.load(handle)
+
+    def _save_category_rules(self) -> None:
+        self.memory.save_category_rules(self.categorization.get_rules_data())
 
     def refresh_rules(self) -> None:
         with CUSTOM_RULES_PATH.open("r", encoding="utf-8") as handle:
