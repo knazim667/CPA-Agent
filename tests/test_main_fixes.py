@@ -73,3 +73,23 @@ def test_calculate_payroll_rejects_zero_gross():
     agent = make_agent()
     plan = {"action": "calculate_payroll", "parameters": {"gross_pay": 0}, "response": ""}
     assert agent.execute_action(plan, "payroll")["status"] == "needs_review"
+
+
+def test_research_tax_action():
+    from unittest.mock import patch
+    from skills.tax_researcher import TaxResearchResult
+    agent = make_agent()
+    agent.memory.record_learned_source = MagicMock()
+    fake = TaxResearchResult(url="https://irs.gov", title="IRS Update", summary="Standard deduction raised.")
+    plan = {"action": "research_tax", "parameters": {"url": "https://irs.gov"}, "response": ""}
+    with patch("skills.tax_researcher.fetch_tax_update", return_value=fake):
+        result = agent.execute_action(plan, "research tax")
+    assert result["status"] == "success"
+    assert "IRS Update" in result["message"]
+    agent.memory.record_learned_source.assert_called_once()
+
+
+def test_research_tax_requires_url():
+    agent = make_agent()
+    plan = {"action": "research_tax", "parameters": {}, "response": ""}
+    assert agent.execute_action(plan, "tax")["status"] == "needs_review"

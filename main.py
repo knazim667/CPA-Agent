@@ -347,6 +347,15 @@ class CPAAgent:
                 "details": {"gross_pay": calc.gross_pay, "federal_withholding": calc.federal_withholding, "social_security": calc.social_security, "medicare": calc.medicare, "net_pay": calc.net_pay},
             }
 
+        if action == "research_tax":
+            from skills.tax_researcher import fetch_tax_update
+            url = parameters.get("url", "").strip()
+            if not url:
+                return {"status": "needs_review", "message": "A URL is required for tax research.", "details": {}}
+            result = fetch_tax_update(url)
+            self.memory.record_learned_source({"url": result.url, "title": result.title, "summary": result.summary, "topic": "tax"})
+            return {"status": "success", "message": f"Tax research complete. Stored: {result.title}", "details": {"url": result.url, "title": result.title, "summary": result.summary}}
+
         return {
             "status": "success",
             "message": plan.get("response", "No tool call was needed."),
