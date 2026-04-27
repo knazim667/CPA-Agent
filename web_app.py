@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 import time
 import uuid
 from pathlib import Path
@@ -52,6 +53,10 @@ class BusinessSwitchRequest(BaseModel):
 
 class ModelModeRequest(BaseModel):
     mode: str
+
+
+class ProviderRequest(BaseModel):
+    provider: str
 
 
 class TransactionRequest(BaseModel):
@@ -143,6 +148,18 @@ def set_model_mode(payload: ModelModeRequest) -> dict[str, Any]:
             ),
             "status": agent.get_status(),
         }
+
+
+@app.post("/api/provider")
+def set_provider(payload: ProviderRequest) -> dict:
+    provider = payload.provider.strip().lower()
+    valid_providers = {"ollama", "openai", "gemini", "openrouter"}
+    if provider not in valid_providers:
+        raise HTTPException(status_code=400, detail=f"Provider must be one of: {', '.join(sorted(valid_providers))}.")
+    with agent_lock:
+        os.environ["MODEL_PROVIDER"] = provider
+        agent._refresh_model_clients()
+        return {"ok": True, "message": f"Provider switched to {provider}.", "status": agent.get_status()}
 
 
 @app.post("/api/record-transaction")
