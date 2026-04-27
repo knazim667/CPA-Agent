@@ -514,8 +514,13 @@ function renderCategoryCell(td, description, category) {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: description, category: chosen })
-      }).catch(function () {});
+      }).then(function (r) {
+        if (!r.ok) { showToast('Failed to save category rule', 'error'); }
+      }).catch(function () { showToast('Failed to save category rule', 'error'); });
       renderCategoryCell(td, description, chosen);
+    });
+    sel.addEventListener('blur', function () {
+      renderCategoryCell(td, description, category);
     });
     td.appendChild(sel);
     sel.focus();
