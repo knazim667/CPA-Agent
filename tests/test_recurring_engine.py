@@ -25,7 +25,8 @@ def test_cancel_schedule_sets_inactive():
     }])
     result = engine.cancel_schedule("abc")
     assert result is True
-    assert engine.list_schedules()[0]["active"] is False
+    assert engine._schedules[0]["active"] is False
+    assert engine.list_schedules() == []
 
 def test_run_due_schedules_returns_due_entry():
     today = "2026-05-01"

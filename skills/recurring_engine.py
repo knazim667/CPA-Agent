@@ -10,10 +10,10 @@ class RecurringEngine:
         self._schedules: list[dict[str, Any]] = list((recurring_data or {}).get("schedules", []))
 
     def get_recurring_data(self) -> dict[str, Any]:
-        return {"schedules": list(self._schedules)}
+        return {"schedules": [dict(s) for s in self._schedules]}
 
     def list_schedules(self) -> list[dict[str, Any]]:
-        return list(self._schedules)
+        return [dict(s) for s in self._schedules if s.get("active", True)]
 
     def create_schedule(
         self,
@@ -63,9 +63,9 @@ class RecurringEngine:
             if s.get("last_posted_date") == today_str:
                 continue
             if s.get("next_date") == today_str:
-                due.append(dict(s))
                 s["last_posted_date"] = today_str
                 s["next_date"] = self._advance_date(today_str, s["frequency"], s["day_of_period"])
+                due.append(dict(s))
         return due
 
     @staticmethod
