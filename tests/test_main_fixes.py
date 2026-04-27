@@ -58,3 +58,18 @@ def test_dashboard_reads_beyond_50_rows():
     call_args = agent.sheets.read_range.call_args
     assert "A1:G50" not in str(call_args)
     assert snapshot["transaction_count"] == 60
+
+
+def test_calculate_payroll_action():
+    agent = make_agent()
+    plan = {"action": "calculate_payroll", "parameters": {"gross_pay": 5000.0, "federal_rate": 0.12}, "response": ""}
+    result = agent.execute_action(plan, "payroll")
+    assert result["status"] == "success"
+    assert result["details"]["gross_pay"] == 5000.0
+    assert result["details"]["net_pay"] == round(5000 - 310 - 72.5 - 600, 2)
+
+
+def test_calculate_payroll_rejects_zero_gross():
+    agent = make_agent()
+    plan = {"action": "calculate_payroll", "parameters": {"gross_pay": 0}, "response": ""}
+    assert agent.execute_action(plan, "payroll")["status"] == "needs_review"

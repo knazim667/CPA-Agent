@@ -334,6 +334,19 @@ class CPAAgent:
             )
             return {"status": "success", "message": "Document note saved.", "details": result}
 
+        if action == "calculate_payroll":
+            from skills.payroll_engine import calculate_simple_payroll
+            gross_pay = self._safe_float(parameters.get("gross_pay", 0))
+            federal_rate = float(parameters.get("federal_rate", 0.12))
+            if gross_pay <= 0:
+                return {"status": "needs_review", "message": "Gross pay must be a positive number.", "details": {"parameters": parameters}}
+            calc = calculate_simple_payroll(gross_pay=gross_pay, federal_rate=federal_rate)
+            return {
+                "status": "success",
+                "message": f"Payroll: Gross ${calc.gross_pay:.2f} | Federal ${calc.federal_withholding:.2f} | SS ${calc.social_security:.2f} | Medicare ${calc.medicare:.2f} | Net ${calc.net_pay:.2f}.",
+                "details": {"gross_pay": calc.gross_pay, "federal_withholding": calc.federal_withholding, "social_security": calc.social_security, "medicare": calc.medicare, "net_pay": calc.net_pay},
+            }
+
         return {
             "status": "success",
             "message": plan.get("response", "No tool call was needed."),
