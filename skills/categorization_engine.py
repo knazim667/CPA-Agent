@@ -7,10 +7,10 @@ from typing import Any
 
 class CategorizationEngine:
     def __init__(self, rules_data: dict[str, Any] | None = None) -> None:
-        self._rules: list[dict[str, Any]] = (rules_data or {}).get("rules", [])
+        self._rules: list[dict[str, Any]] = list((rules_data or {}).get("rules", []))
 
     def get_rules_data(self) -> dict[str, Any]:
-        return {"rules": self._rules}
+        return {"rules": list(self._rules)}
 
     def suggest_category(self, description: str) -> dict[str, Any] | None:
         desc_lower = description.lower()
@@ -59,6 +59,8 @@ class CategorizationEngine:
         for (vendor, category), count in pairs.items():
             if count >= 2:
                 existing = next((r for r in self._rules if r["pattern"] == vendor), None)
+                # If a vendor maps to multiple categories, the first pair (by Counter iteration)
+                # wins; subsequent conflicting categories are skipped to avoid overwriting.
                 if not existing:
                     self._rules.append({
                         "id": str(uuid.uuid4()),
