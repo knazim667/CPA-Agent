@@ -121,7 +121,7 @@ function initTabs() {
 }
 
 /* ----------------------------------------------------------
-   6. Settings panel
+   7. Settings panel
    ---------------------------------------------------------- */
 
 function initSettings() {
@@ -150,7 +150,7 @@ function initSettings() {
 }
 
 /* ----------------------------------------------------------
-   7. Update status / dashboard
+   8. Update status / dashboard
    ---------------------------------------------------------- */
 
 function updateStatus(status) {
@@ -163,7 +163,11 @@ function updateStatus(status) {
       var opt = document.createElement('option');
       opt.value = biz.business_name;
       opt.textContent = biz.business_name;
-      if (biz.key === status.active_business_key) { opt.selected = true; }
+      if (biz.key === status.active_business_key) {
+        opt.selected = true;
+        var icon = document.querySelector('.sidebar-biz-icon');
+        if (icon) { icon.textContent = biz.business_name.charAt(0).toUpperCase(); }
+      }
       businessSelect.appendChild(opt);
     });
   }
@@ -249,7 +253,7 @@ function updateStatus(status) {
 }
 
 /* ----------------------------------------------------------
-   8. Recent transactions
+   9. Recent transactions
    ---------------------------------------------------------- */
 
 function renderRecentTransactions(items) {
@@ -276,7 +280,7 @@ function renderRecentTransactions(items) {
 }
 
 /* ----------------------------------------------------------
-   9. Recent audits
+   10. Recent audits
    ---------------------------------------------------------- */
 
 function renderRecentAudits(items) {
@@ -302,7 +306,7 @@ function renderRecentAudits(items) {
 }
 
 /* ----------------------------------------------------------
-   10. Render conversation
+   11. Render conversation
    ---------------------------------------------------------- */
 
 function renderConversation(conversation, pres) {
@@ -318,7 +322,7 @@ function renderConversation(conversation, pres) {
 }
 
 /* ----------------------------------------------------------
-   11. Append a single message
+   12. Append a single message
    ---------------------------------------------------------- */
 
 function appendMessage(role, text, presentation) {
@@ -344,7 +348,7 @@ function appendMessage(role, text, presentation) {
 }
 
 /* ----------------------------------------------------------
-   12. Render presentation block
+   13. Render presentation block
    ---------------------------------------------------------- */
 
 function renderPresentation(p) {
@@ -407,7 +411,7 @@ function renderPresentation(p) {
 }
 
 /* ----------------------------------------------------------
-   13. Provider switch
+   14. Provider switch
    ---------------------------------------------------------- */
 
 function initProviderSwitch() {
@@ -430,7 +434,7 @@ function initProviderSwitch() {
 }
 
 /* ----------------------------------------------------------
-   14. Mode switch
+   15. Mode switch
    ---------------------------------------------------------- */
 
 function initModeSwitch() {
@@ -453,7 +457,7 @@ function initModeSwitch() {
 }
 
 /* ----------------------------------------------------------
-   15. Business auto-switch
+   16. Business auto-switch
    ---------------------------------------------------------- */
 
 function initBusinessSwitch() {
@@ -475,7 +479,7 @@ function initBusinessSwitch() {
 }
 
 /* ----------------------------------------------------------
-   16. Fetch ledger
+   17. Fetch ledger
    ---------------------------------------------------------- */
 
 function fetchLedger(page) {
@@ -543,7 +547,7 @@ function initLedger() {
 }
 
 /* ----------------------------------------------------------
-   17. Transaction form toggle
+   18. Transaction form toggle
    ---------------------------------------------------------- */
 
 function initTransactionForm() {
@@ -595,7 +599,7 @@ function initTransactionForm() {
 }
 
 /* ----------------------------------------------------------
-   18. P&L Report
+   19. P&L Report
    ---------------------------------------------------------- */
 
 function initReports() {
@@ -661,7 +665,7 @@ function initReports() {
     });
   }
 
-  /* 19. CSV export */
+  /* 20. CSV export */
   var exportBtn = document.getElementById('export-csv-btn');
   if (exportBtn) {
     exportBtn.addEventListener('click', function () {
@@ -673,7 +677,7 @@ function initReports() {
 }
 
 /* ----------------------------------------------------------
-   20. Document upload
+   21. Document upload
    ---------------------------------------------------------- */
 
 function initDocuments() {
@@ -703,7 +707,7 @@ function initDocuments() {
       .catch(function (err) { showToast(String(err), 'error'); });
   });
 
-  /* 21. Draft approval — delegated */
+  /* 22. Draft approval — delegated */
   if (documentDrafts) {
     documentDrafts.addEventListener('click', function (e) {
       var btn = e.target.closest('.approval-button');
@@ -757,7 +761,7 @@ function appendDraftCard(data) {
 }
 
 /* ----------------------------------------------------------
-   22 + 23. Chat submit and Cmd+Enter shortcut
+   23 + 24. Chat submit and Cmd+Enter shortcut
    ---------------------------------------------------------- */
 
 function initChat() {
@@ -781,7 +785,7 @@ function initChat() {
         latestPresentation = data.presentation || null;
         appendMessage('agent', data.message || '', data.presentation || null);
 
-        /* 25. Voice reply */
+        /* 26. Voice reply */
         if (speakReplies && data.message && window.speechSynthesis) {
           var utt = new SpeechSynthesisUtterance(data.message);
           window.speechSynthesis.speak(utt);
@@ -803,7 +807,7 @@ function initChat() {
 }
 
 /* ----------------------------------------------------------
-   24 + 25. Voice recognition and voice reply toggle
+   25 + 26. Voice recognition and voice reply toggle
    ---------------------------------------------------------- */
 
 function configureVoice() {
@@ -811,7 +815,7 @@ function configureVoice() {
 
   if (voiceStatus) { voiceStatus.textContent = 'Browser voice idle'; }
 
-  /* 25. Speak-toggle */
+  /* 26. Speak-toggle */
   if (speakToggle) {
     speakToggle.addEventListener('click', function () {
       speakReplies = !speakReplies;
@@ -868,7 +872,7 @@ function configureVoice() {
 }
 
 /* ----------------------------------------------------------
-   26. fetchStatus — initial load
+   27. fetchStatus — initial load
    ---------------------------------------------------------- */
 
 function fetchStatus() {

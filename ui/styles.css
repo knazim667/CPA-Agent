@@ -23,7 +23,6 @@
   --radius-sm: 8px;
   --font: 'Inter', system-ui, -apple-system, sans-serif;
   --top-bar-h: 60px;
-  --tab-bar-h: 48px;
 }
 
 /* ── 1. Reset & Base ── */
@@ -87,61 +86,9 @@ body {
   font-weight: 600;
 }
 
-/* ── 6. Tab Bar ── */
-.tab-bar {
-  height: var(--tab-bar-h);
-  background: var(--panel);
-  border-bottom: 1px solid var(--border);
-  padding: 0 24px;
-  display: flex;
-  align-items: flex-end;
-  gap: 4px;
-  position: sticky;
-  top: var(--top-bar-h);
-  z-index: 99;
-}
-
-/* ── 7. Tab Buttons ── */
-.tab-btn {
-  border: none;
-  background: none;
-  padding: 12px 16px;
-  cursor: pointer;
-  color: var(--muted);
-  font-size: 14px;
-  font-weight: 500;
-  border-bottom: 2px solid transparent;
-  transition: all 150ms;
-}
-
-.tab-btn:hover {
-  color: var(--text);
-}
-
-.tab-btn.active {
-  color: var(--accent);
-  border-bottom-color: var(--accent);
-}
-
-/* ── 8. App Shell ── */
-.app-shell {
-  max-width: 1400px;
-  margin: 0 auto;
-  padding: 24px;
-}
-
 /* ── 9. Tab Content ── */
 .tab-content {
   width: 100%;
-}
-
-/* ── 10. Tab Pane ── */
-.tab-pane {
-  display: block;
-}
-
-.tab-pane.hidden {
-  display: none;
 }
 
 /* ── 11. Panel ── */
@@ -611,10 +558,6 @@ select#business-select {
 
   .top-bar {
     padding: 0 12px;
-  }
-
-  .app-shell {
-    padding: 12px;
   }
 }
 
