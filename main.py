@@ -12,6 +12,9 @@ from urllib.parse import urlparse
 
 import requests
 import speech_recognition as sr
+from dotenv import load_dotenv
+
+load_dotenv()
 
 from core.model_client import get_model_client
 from memory_manager import MemoryManager

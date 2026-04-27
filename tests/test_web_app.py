@@ -128,3 +128,33 @@ def test_ledger_search_filter(client):
     data = response.json()
     assert data["total_count"] == 1
     assert data["rows"][0][1] == "Coffee shop"
+
+
+def test_category_suggest_returns_match(client):
+    import web_app
+    web_app.agent.categorization.suggest_category.return_value = {
+        "category": "Meals & Entertainment", "confidence": 0.95, "rule_id": "r1"
+    }
+    response = client.get("/api/category/suggest?description=Starbucks")
+    assert response.status_code == 200
+    assert response.json()["category"] == "Meals & Entertainment"
+
+
+def test_category_suggest_requires_description(client):
+    response = client.get("/api/category/suggest")
+    assert response.status_code == 400
+
+
+def test_save_category_rule(client):
+    import web_app
+    web_app.agent.categorization.save_rule.return_value = {
+        "id": "r1", "pattern": "starbucks", "category": "Meals & Entertainment",
+        "confidence": 0.8, "use_count": 1,
+    }
+    response = client.post(
+        "/api/category-rule",
+        json={"description": "Starbucks", "category": "Meals & Entertainment"},
+    )
+    assert response.status_code == 200
+    assert response.json()["ok"] is True
+    web_app.agent._save_category_rules.assert_called_once()
