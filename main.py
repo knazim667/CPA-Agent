@@ -386,6 +386,24 @@ class CPAAgent:
             reference.strip(),
             notes.strip(),
         ]
+
+        # Duplicate guard — block if same date/amount/type already exists
+        duplicate = self.sheets.find_duplicate_row(
+            spreadsheet_id=profile["google_sheet_id"],
+            date=date.strip(),
+            amount=str(amount_value),
+            entry_type=normalized_type,
+        )
+        if duplicate and "confirm duplicate" not in notes.lower():
+            return {
+                "ok": False,
+                "message": (
+                    f"Duplicate detected: a {duplicate['type']} of {duplicate['amount']} "
+                    f"on {duplicate['date']} ({duplicate['description']}) already exists. "
+                    "If this is intentional, add 'confirm duplicate' to the Notes field."
+                ),
+            }
+
         draft_result = {
             "status": "success",
             "message": (
@@ -736,6 +754,9 @@ class CPAAgent:
             )
         elif provider == "openai":
             reasoning_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
+            reflection_model = reasoning_model
+        elif provider == "openrouter":
+            reasoning_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
             reflection_model = reasoning_model
         else:
             reasoning_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")

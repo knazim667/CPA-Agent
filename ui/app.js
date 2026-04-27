@@ -145,8 +145,8 @@ function updateStatus(status) {
     businessSelect.textContent = '';
     status.businesses.forEach(function (biz) {
       var opt = document.createElement('option');
-      opt.value = biz.key;
-      opt.textContent = biz.name || biz.key;
+      opt.value = biz.business_name;
+      opt.textContent = biz.business_name;
       if (biz.key === status.active_business_key) { opt.selected = true; }
       businessSelect.appendChild(opt);
     });
@@ -446,12 +446,13 @@ function initBusinessSwitch() {
     fetch('/api/switch-business', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ business_key: businessSelect.value })
+      body: JSON.stringify({ business_name: businessSelect.value })
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
         if (data.error) { showToast(data.error, 'error'); return; }
         updateStatus(data.status);
+        showToast('Switched to ' + businessSelect.value, 'success');
       })
       .catch(function (err) { showToast(String(err), 'error'); });
   });
@@ -857,7 +858,13 @@ function configureVoice() {
 function fetchStatus() {
   fetch('/api/status')
     .then(function (r) { return r.json(); })
-    .then(function (data) { updateStatus(data); })
+    .then(function (data) {
+      updateStatus(data);
+      var ledgerBtn = document.querySelector('.tab-btn[data-tab="ledger"]');
+      if (ledgerBtn && ledgerBtn.classList.contains('active')) {
+        fetchLedger(currentLedgerPage || 1);
+      }
+    })
     .catch(function (err) {
       if (bootWarning) { bootWarning.classList.remove('hidden'); }
       console.error('fetchStatus error:', err);
@@ -932,6 +939,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initChat();
   configureVoice();
 
-  /* Initial data load */
+  /* Initial data load + live 5-second poll */
   fetchStatus();
+  setInterval(fetchStatus, 5000);
 });

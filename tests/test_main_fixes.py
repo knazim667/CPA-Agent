@@ -93,3 +93,64 @@ def test_research_tax_requires_url():
     agent = make_agent()
     plan = {"action": "research_tax", "parameters": {}, "response": ""}
     assert agent.execute_action(plan, "tax")["status"] == "needs_review"
+
+
+# ── Bug 3: Duplicate transaction detection ────────────────────────────────────
+
+def test_find_duplicate_row_returns_match(mocker):
+    from skills.google_sheets_manager import GoogleSheetsManager
+    mgr = GoogleSheetsManager.__new__(GoogleSheetsManager)
+    mocker.patch.object(
+        mgr,
+        "read_range",
+        return_value=[
+            ["2026-04-27", "Coffee", "Meals", "12.5", "Expense", "", ""],
+            ["2026-04-26", "Rent", "Rent", "1500.0", "Expense", "", ""],
+        ],
+    )
+    result = mgr.find_duplicate_row("sheet_id", "2026-04-27", "12.5", "Expense")
+    assert result is not None
+    assert result["description"] == "Coffee"
+
+
+def test_find_duplicate_row_returns_none_when_no_match(mocker):
+    from skills.google_sheets_manager import GoogleSheetsManager
+    mgr = GoogleSheetsManager.__new__(GoogleSheetsManager)
+    mocker.patch.object(mgr, "read_range", return_value=[
+        ["2026-04-26", "Rent", "Rent", "1500.0", "Expense", "", ""],
+    ])
+    result = mgr.find_duplicate_row("sheet_id", "2026-04-27", "999.0", "Income")
+    assert result is None
+
+
+def test_find_duplicate_row_skips_short_rows(mocker):
+    from skills.google_sheets_manager import GoogleSheetsManager
+    mgr = GoogleSheetsManager.__new__(GoogleSheetsManager)
+    mocker.patch.object(mgr, "read_range", return_value=[["2026-04-27", "Partial"]])
+    result = mgr.find_duplicate_row("sheet_id", "2026-04-27", "12.5", "Expense")
+    assert result is None
+
+
+# ── Bug 4: OCR graceful fallback ──────────────────────────────────────────────
+
+def test_ocr_returns_message_when_pytesseract_missing(tmp_path, mocker):
+    import skills.document_processor as dp
+    mocker.patch.object(dp, "_PYTESSERACT_INSTALLED", False)
+    processor = dp.DocumentProcessor(tmp_path)
+    from PIL import Image
+    img_path = tmp_path / "receipt.png"
+    Image.new("RGB", (10, 10), color="white").save(img_path)
+    result = processor.extract_document(img_path)
+    assert "OCR unavailable" in result["text"]
+
+
+def test_ocr_returns_message_when_tesseract_binary_missing(tmp_path, mocker):
+    import skills.document_processor as dp
+    mocker.patch.object(dp, "_PYTESSERACT_INSTALLED", True)
+    mocker.patch("shutil.which", return_value=None)
+    processor = dp.DocumentProcessor(tmp_path)
+    from PIL import Image
+    img_path = tmp_path / "receipt.png"
+    Image.new("RGB", (10, 10), color="white").save(img_path)
+    result = processor.extract_document(img_path)
+    assert "OCR unavailable" in result["text"]

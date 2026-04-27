@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import shutil
 import time
 from pathlib import Path
 from typing import Any
@@ -9,8 +10,10 @@ from pypdf import PdfReader
 
 try:
     import pytesseract
-except ImportError:  # pragma: no cover - handled at runtime
+    _PYTESSERACT_INSTALLED = True
+except ImportError:
     pytesseract = None
+    _PYTESSERACT_INSTALLED = False
 
 
 class DocumentProcessor:
@@ -59,9 +62,9 @@ class DocumentProcessor:
 
     @staticmethod
     def _extract_image_text(path: Path) -> str:
-        if pytesseract is None:
-            raise ValueError(
-                "Image OCR is not available yet. Install pytesseract and the Tesseract binary to read receipts."
-            )
+        if not _PYTESSERACT_INSTALLED:
+            return "[OCR unavailable — pytesseract not installed. Run: pip install pytesseract]"
+        if not shutil.which("tesseract"):
+            return "[OCR unavailable — Tesseract binary not found. Run: brew install tesseract]"
         with Image.open(path) as image:
             return pytesseract.image_to_string(image)

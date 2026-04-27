@@ -178,6 +178,35 @@ class GoogleSheetsManager:
             )
         )
 
+    def find_duplicate_row(
+        self,
+        spreadsheet_id: str,
+        date: str,
+        amount: str | float,
+        entry_type: str,
+        lookback_rows: int = 100,
+    ) -> dict[str, Any] | None:
+        """Return the first row matching date+amount+type within the last lookback_rows, or None."""
+        rows = self.read_range(spreadsheet_id, f"Ledger!A2:G{1 + lookback_rows}")
+        target_date = str(date).strip()
+        target_amount = str(amount).strip()
+        target_type = str(entry_type).strip().lower()
+        for row in rows:
+            if len(row) < 5:
+                continue
+            if (
+                str(row[0]).strip() == target_date
+                and str(row[3]).strip() == target_amount
+                and str(row[4]).strip().lower() == target_type
+            ):
+                return {
+                    "date": row[0],
+                    "description": row[1] if len(row) > 1 else "",
+                    "amount": row[3],
+                    "type": row[4],
+                }
+        return None
+
     def update_range(
         self,
         spreadsheet_id: str,
