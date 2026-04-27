@@ -162,6 +162,41 @@ def set_provider(payload: ProviderRequest) -> dict:
         return {"ok": True, "message": f"Provider switched to {provider}.", "status": agent.get_status()}
 
 
+@app.get("/api/report/pl")
+def report_pl(from_date: str = "", to_date: str = "") -> dict:
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            raise HTTPException(status_code=400, detail="No ledger connected for this business.")
+        rows = agent.sheets.read_range(spreadsheet_id=profile["google_sheet_id"], range_name="Ledger!A1:G")
+        data_rows = rows[1:] if rows and rows[0][:len(agent.LEDGER_HEADERS)] == agent.LEDGER_HEADERS else rows
+        if from_date or to_date:
+            data_rows = [r for r in data_rows if (not from_date or str(r[0]).strip() >= from_date) and (not to_date or str(r[0]).strip() <= to_date)]
+        income_by_cat: dict = {}
+        expense_by_cat: dict = {}
+        for row in data_rows:
+            if len(row) < 5:
+                continue
+            amount = agent._safe_float(row[3] if len(row) > 3 else 0)
+            category = str(row[2]).strip() if len(row) > 2 else "Uncategorized"
+            if str(row[4]).strip().lower() == "income":
+                income_by_cat[category] = income_by_cat.get(category, 0.0) + amount
+            else:
+                expense_by_cat[category] = expense_by_cat.get(category, 0.0) + amount
+        income_total = sum(income_by_cat.values())
+        expense_total = sum(expense_by_cat.values())
+        return {
+            "business": profile["business_name"],
+            "from_date": from_date or None,
+            "to_date": to_date or None,
+            "income_by_category": [{"category": k, "total": round(v, 2)} for k, v in sorted(income_by_cat.items())],
+            "expense_by_category": [{"category": k, "total": round(v, 2)} for k, v in sorted(expense_by_cat.items())],
+            "income_total": round(income_total, 2),
+            "expense_total": round(expense_total, 2),
+            "net": round(income_total - expense_total, 2),
+        }
+
+
 @app.post("/api/record-transaction")
 def record_transaction(payload: TransactionRequest) -> dict[str, Any]:
     with agent_lock:

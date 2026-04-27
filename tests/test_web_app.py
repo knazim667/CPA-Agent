@@ -14,6 +14,9 @@ def client(monkeypatch):
     mock_agent.input_mode = "text"
     mock_agent.memory = MagicMock()
     mock_agent.memory.current_business_key = "biz_a"
+    mock_agent.sheets = MagicMock()
+    mock_agent.LEDGER_HEADERS = ["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"]
+    mock_agent._safe_float = lambda x: float(x) if x else 0.0
     mock_agent.get_status.return_value = {
         "active_business_key": "biz_a",
         "active_business": {"business_name": "Biz A", "google_sheet_id": "", "google_doc_id": "", "state": ""},
@@ -47,3 +50,35 @@ def test_provider_switch_to_openai(client, monkeypatch):
     response = client.post("/api/provider", json={"provider": "openai"})
     assert response.status_code == 200
     assert response.json()["ok"] is True
+
+
+def test_pl_report_returns_category_totals(client):
+    rows = [
+        ["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"],
+        ["2026-01-10", "Client A", "Consulting", "5000.00", "Income", "", ""],
+        ["2026-01-15", "Supplies", "Office", "200.00", "Expense", "", ""],
+        ["2026-02-01", "Software", "SaaS", "50.00", "Expense", "", ""],
+    ]
+    client.app.state  # touch to ensure app is initialized
+    import web_app
+    web_app.agent.sheets.read_range.return_value = rows
+    web_app.agent.memory.get_current_business.return_value = {"business_name": "Biz A", "google_sheet_id": "sheet-id"}
+    response = client.get("/api/report/pl")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["income_total"] == 5000.0
+    assert data["expense_total"] == 250.0
+    assert data["net"] == 4750.0
+
+
+def test_pl_report_date_filter(client):
+    rows = [
+        ["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"],
+        ["2026-01-10", "Jan sale", "Sales", "1000.00", "Income", "", ""],
+        ["2026-03-05", "Mar sale", "Sales", "2000.00", "Income", "", ""],
+    ]
+    import web_app
+    web_app.agent.sheets.read_range.return_value = rows
+    web_app.agent.memory.get_current_business.return_value = {"business_name": "Biz A", "google_sheet_id": "sheet-id"}
+    response = client.get("/api/report/pl?from_date=2026-02-01")
+    assert response.json()["income_total"] == 2000.0
