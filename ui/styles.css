@@ -619,10 +619,14 @@ select#business-select {
 }
 
 /* ── App shell ─────────────────────────────────────────── */
+/* Overrides the earlier .app-shell rule (which used max-width + padding) */
 .app-shell {
   display: flex;
   height: calc(100vh - 52px); /* minus top-bar height */
   overflow: hidden;
+  max-width: none;
+  margin: 0;
+  padding: 0;
 }
 
 /* ── Sidebar ──────────────────────────────────────────── */
