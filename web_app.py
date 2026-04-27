@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import time
 import uuid
 from pathlib import Path
 from threading import Lock
@@ -25,6 +26,20 @@ agent = CPAAgent()
 document_processor = DocumentProcessor(UPLOAD_DIR)
 agent_lock = Lock()
 pending_document_drafts: dict[str, dict[str, Any]] = {}
+
+_DRAFT_TTL_SECONDS = 3600
+_DRAFT_MAX_ENTRIES = 100
+
+
+def _evict_stale_drafts() -> None:
+    now = time.time()
+    stale = [k for k, v in pending_document_drafts.items() if now - v.get("created_at", 0) > _DRAFT_TTL_SECONDS]
+    for k in stale:
+        pending_document_drafts.pop(k, None)
+    if len(pending_document_drafts) > _DRAFT_MAX_ENTRIES:
+        oldest = sorted(pending_document_drafts.items(), key=lambda x: x[1].get("created_at", 0))
+        for k, _ in oldest[: len(pending_document_drafts) - _DRAFT_MAX_ENTRIES]:
+            pending_document_drafts.pop(k, None)
 
 
 class MessageRequest(BaseModel):
@@ -205,12 +220,14 @@ async def upload_document(
                     },
                 }
 
+            _evict_stale_drafts()
             token = uuid.uuid4().hex
             pending_document_drafts[token] = {
                 "business_key": agent.memory.current_business_key,
                 "rows": draft["details"]["rows"],
                 "file_name": extracted["file_name"],
                 "instruction": instruction,
+                "created_at": time.time(),
             }
             presentation = {
                 "kind": "document_draft",
@@ -255,6 +272,7 @@ async def upload_document(
 
 @app.post("/api/approve-document-draft")
 def approve_document_draft(payload: ApprovalRequest) -> dict[str, Any]:
+    _evict_stale_drafts()
     token = payload.token.strip()
     draft = pending_document_drafts.get(token)
     if not draft:
