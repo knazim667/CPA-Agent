@@ -1,0 +1,72 @@
+from __future__ import annotations
+
+import uuid
+from collections import Counter
+from typing import Any
+
+
+class CategorizationEngine:
+    def __init__(self, rules_data: dict[str, Any] | None = None) -> None:
+        self._rules: list[dict[str, Any]] = (rules_data or {}).get("rules", [])
+
+    def get_rules_data(self) -> dict[str, Any]:
+        return {"rules": self._rules}
+
+    def suggest_category(self, description: str) -> dict[str, Any] | None:
+        desc_lower = description.lower()
+        best: dict[str, Any] | None = None
+        for rule in self._rules:
+            if rule["pattern"] in desc_lower:
+                if best is None or rule.get("confidence", 0) > best.get("confidence", 0):
+                    best = rule
+        if best is None:
+            return None
+        return {
+            "category": best["category"],
+            "confidence": best.get("confidence", 0.8),
+            "rule_id": best["id"],
+        }
+
+    def save_rule(self, description: str, category: str) -> dict[str, Any]:
+        pattern = description.strip().lower()
+        for rule in self._rules:
+            if rule["pattern"] == pattern:
+                rule["category"] = category
+                rule["confidence"] = min(rule.get("confidence", 0.8) + 0.05, 1.0)
+                rule["use_count"] = rule.get("use_count", 0) + 1
+                return rule
+        new_rule: dict[str, Any] = {
+            "id": str(uuid.uuid4()),
+            "pattern": pattern,
+            "match_type": "contains",
+            "category": category,
+            "confidence": 0.8,
+            "use_count": 1,
+        }
+        self._rules.append(new_rule)
+        return new_rule
+
+    def backfill_rules_from_ledger(self, rows: list[list[Any]]) -> int:
+        pairs: Counter = Counter()
+        for row in rows:
+            if len(row) < 3:
+                continue
+            vendor = str(row[1]).strip().lower()
+            category = str(row[2]).strip()
+            if vendor and category:
+                pairs[(vendor, category)] += 1
+        created = 0
+        for (vendor, category), count in pairs.items():
+            if count >= 2:
+                existing = next((r for r in self._rules if r["pattern"] == vendor), None)
+                if not existing:
+                    self._rules.append({
+                        "id": str(uuid.uuid4()),
+                        "pattern": vendor,
+                        "match_type": "contains",
+                        "category": category,
+                        "confidence": 0.85,
+                        "use_count": count,
+                    })
+                    created += 1
+        return created
