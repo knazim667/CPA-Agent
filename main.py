@@ -814,68 +814,41 @@ class CPAAgent:
                 extracted_items.append((match.group(1).strip(), float(match.group(2))))
         if not extracted_items:
             return []
-
         default_category = parameters.get("category") or parameters.get("account") or "Start-up Costs"
         entry_type = parameters.get("type") or parameters.get("entry_type") or "Expense"
         date_map = self._infer_dates_from_text(user_input)
         fallback_date = parameters.get("date") or date_map.get("default") or ""
+        text_lines = user_input.splitlines()
         rows = []
         for description, amount in extracted_items:
-            description_key = description.lower()
             matched_date = fallback_date
-            preferred_keywords = ("nozzle", "filament", "sample", "caliper", "glue", "printing", "table", "cable")
-            for keyword in preferred_keywords:
-                if keyword in description_key and keyword in date_map:
-                    matched_date = date_map[keyword]
-                    break
-            else:
-                prioritized_keywords = sorted(
-                    ((keyword, mapped_date) for keyword, mapped_date in date_map.items() if keyword != "default"),
-                    key=lambda item: len(item[0]),
-                    reverse=True,
-                )
-                for keyword, mapped_date in prioritized_keywords:
-                    if keyword in description_key:
-                        matched_date = mapped_date
-                        break
-            rows.append(
-                self._normalize_row(
-                    [
-                        matched_date,
-                        description,
-                        default_category,
-                        amount,
-                        entry_type,
-                        "",
-                        parameters.get("notes", ""),
-                    ]
-                )
+            desc_line_idx = next(
+                (i for i, line in enumerate(text_lines) if description.lower() in line.lower()), -1
             )
+            if desc_line_idx >= 0 and len(date_map) > 1:
+                preceding = "\n".join(text_lines[: desc_line_idx + 1])
+                preceding_dates = re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", preceding)
+                if preceding_dates:
+                    matched_date = preceding_dates[-1]
+            for label, label_date in date_map.items():
+                if label != "default" and label in description.lower():
+                    matched_date = label_date
+                    break
+            rows.append(self._normalize_row([matched_date, description, default_category, amount, entry_type, "", parameters.get("notes", "")]))
         return rows
 
     def _infer_dates_from_text(self, text: str) -> dict[str, str]:
         mappings: dict[str, str] = {}
+        all_dates = re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", text)
+        if not all_dates:
+            return mappings
+        mappings["default"] = all_dates[-1]
         for match in re.finditer(
-            r"(?P<label>[A-Za-z0-9 /]+?)\s+(?:is on|on|dated)\s+(?P<date>\d{1,2}/\d{1,2}/\d{4})",
+            r"(?P<label>[A-Za-z0-9 /]+?)\s+(?:is on|dated)\s+(?P<date>\d{1,2}/\d{1,2}/\d{4})",
             text,
             re.IGNORECASE,
         ):
-            label = match.group("label").strip().lower()
-            mappings[label] = match.group("date")
-            if "printer" in label:
-                mappings["printer"] = match.group("date")
-        generic_dates = re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", text)
-        if generic_dates and "default" not in mappings:
-            mappings["default"] = generic_dates[-1]
-        if "others things i bought" in text.lower() and len(generic_dates) >= 2:
-            mappings["cable"] = generic_dates[-1]
-            mappings["table"] = generic_dates[-1]
-            mappings["printing"] = generic_dates[-1]
-            mappings["caliper"] = generic_dates[-1]
-            mappings["glue"] = generic_dates[-1]
-            mappings["nozzle"] = generic_dates[-1]
-            mappings["sample"] = generic_dates[-1]
-            mappings["filament"] = generic_dates[-1]
+            mappings[match.group("label").strip().lower()] = match.group("date")
         return mappings
 
     def _next_ledger_row_number(self, spreadsheet_id: str, worksheet_name: str) -> int:
