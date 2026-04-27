@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import csv
+import io
 import os
 import time
 import uuid
@@ -195,6 +197,59 @@ def report_pl(from_date: str = "", to_date: str = "") -> dict:
             "expense_total": round(expense_total, 2),
             "net": round(income_total - expense_total, 2),
         }
+
+
+@app.get("/api/export/csv")
+def export_csv(from_date: str = "", to_date: str = ""):
+    from fastapi.responses import StreamingResponse
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            raise HTTPException(status_code=400, detail="No ledger connected.")
+        rows = agent.sheets.read_range(spreadsheet_id=profile["google_sheet_id"], range_name="Ledger!A1:G")
+        data_rows = rows[1:] if rows and rows[0][:len(agent.LEDGER_HEADERS)] == agent.LEDGER_HEADERS else rows
+        if from_date or to_date:
+            data_rows = [r for r in data_rows if (not from_date or str(r[0]).strip() >= from_date) and (not to_date or str(r[0]).strip() <= to_date)]
+        output = io.StringIO()
+        writer = csv.writer(output)
+        writer.writerow(agent.LEDGER_HEADERS)
+        for row in data_rows:
+            writer.writerow(agent._normalize_row(row))
+        output.seek(0)
+        today = time.strftime("%Y-%m-%d")
+        filename = f"{agent.memory.current_business_key}-ledger-{today}.csv"
+    return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.get("/api/ledger")
+def get_ledger(page: int = 1, page_size: int = 20, search: str = "", from_date: str = "", to_date: str = "") -> dict:
+    page_size = min(max(page_size, 1), 100)
+    page = max(page, 1)
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            return {"rows": [], "total_count": 0, "page": page, "page_size": page_size, "total_pages": 0}
+        rows = agent.sheets.read_range(spreadsheet_id=profile["google_sheet_id"], range_name="Ledger!A1:G")
+        data_rows = rows[1:] if rows and rows[0][:len(agent.LEDGER_HEADERS)] == agent.LEDGER_HEADERS else rows
+        filtered = []
+        for row in data_rows:
+            if len(row) < 2:
+                continue
+            date_str = str(row[0]).strip()
+            if from_date and date_str < from_date:
+                continue
+            if to_date and date_str > to_date:
+                continue
+            if search:
+                desc = str(row[1]).lower() if len(row) > 1 else ""
+                cat = str(row[2]).lower() if len(row) > 2 else ""
+                if search.lower() not in desc and search.lower() not in cat:
+                    continue
+            filtered.append(agent._normalize_row(row))
+        total_count = len(filtered)
+        total_pages = max(1, (total_count + page_size - 1) // page_size)
+        start = (page - 1) * page_size
+        return {"rows": filtered[start: start + page_size], "total_count": total_count, "page": page, "page_size": page_size, "total_pages": total_pages}
 
 
 @app.post("/api/record-transaction")

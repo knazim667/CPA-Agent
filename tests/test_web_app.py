@@ -17,6 +17,7 @@ def client(monkeypatch):
     mock_agent.sheets = MagicMock()
     mock_agent.LEDGER_HEADERS = ["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"]
     mock_agent._safe_float = lambda x: float(x) if x else 0.0
+    mock_agent._normalize_row = lambda row: list(row[:7]) if isinstance(row, (list, tuple)) else row
     mock_agent.get_status.return_value = {
         "active_business_key": "biz_a",
         "active_business": {"business_name": "Biz A", "google_sheet_id": "", "google_doc_id": "", "state": ""},
@@ -82,3 +83,48 @@ def test_pl_report_date_filter(client):
     web_app.agent.memory.get_current_business.return_value = {"business_name": "Biz A", "google_sheet_id": "sheet-id"}
     response = client.get("/api/report/pl?from_date=2026-02-01")
     assert response.json()["income_total"] == 2000.0
+
+
+def test_export_csv_returns_csv_file(client):
+    rows = [
+        ["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"],
+        ["2026-01-10", "Sale", "Consulting", "500.00", "Income", "", ""],
+    ]
+    import web_app
+    web_app.agent.sheets.read_range.return_value = rows
+    web_app.agent.memory.get_current_business.return_value = {"business_name": "Biz A", "google_sheet_id": "sheet-id"}
+    web_app.agent.memory.current_business_key = "biz_a"
+    response = client.get("/api/export/csv")
+    assert response.status_code == 200
+    assert "text/csv" in response.headers["content-type"]
+    assert "attachment" in response.headers["content-disposition"]
+    assert "Sale" in response.text
+
+
+def test_ledger_returns_paginated_rows(client):
+    rows = [["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"]]
+    for i in range(25):
+        rows.append([f"2026-01-{(i % 28) + 1:02d}", f"Item {i}", "Office", "10.00", "Expense", "", ""])
+    import web_app
+    web_app.agent.sheets.read_range.return_value = rows
+    web_app.agent.memory.get_current_business.return_value = {"business_name": "Biz A", "google_sheet_id": "sheet-id"}
+    response = client.get("/api/ledger?page=1&page_size=20")
+    data = response.json()
+    assert data["total_count"] == 25
+    assert len(data["rows"]) == 20
+    assert data["total_pages"] == 2
+
+
+def test_ledger_search_filter(client):
+    rows = [
+        ["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"],
+        ["2026-01-10", "Coffee shop", "Meals", "15.00", "Expense", "", ""],
+        ["2026-01-11", "Office supplies", "Office", "50.00", "Expense", "", ""],
+    ]
+    import web_app
+    web_app.agent.sheets.read_range.return_value = rows
+    web_app.agent.memory.get_current_business.return_value = {"business_name": "Biz A", "google_sheet_id": "sheet-id"}
+    response = client.get("/api/ledger?search=coffee")
+    data = response.json()
+    assert data["total_count"] == 1
+    assert data["rows"][0][1] == "Coffee shop"
