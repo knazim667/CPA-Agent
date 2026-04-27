@@ -75,33 +75,49 @@ var documentDrafts;
 var voiceButton, voiceStatus, speakToggle;
 
 /* ----------------------------------------------------------
-   5. Tab routing
+   5. Recurring transactions (stub — content in Task 8)
+   ---------------------------------------------------------- */
+
+function fetchRecurring() {
+  // Placeholder: full implementation comes in Task 8.
+  var body = document.getElementById('recurring-body');
+  if (body && !body.hasChildNodes()) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6;
+    td.style.color = '#6b7280';
+    td.style.textAlign = 'center';
+    td.textContent = 'No recurring transactions yet.';
+    tr.appendChild(td);
+    body.appendChild(tr);
+  }
+}
+
+/* ----------------------------------------------------------
+   6. Tab routing
    ---------------------------------------------------------- */
 
 function initTabs() {
-  var tabBtns = document.querySelectorAll('.tab-btn');
-  var tabPanes = document.querySelectorAll('.tab-pane');
-
-  tabBtns.forEach(function (btn) {
-    btn.addEventListener('click', function () {
-      // Deactivate all buttons and hide all panes
-      tabBtns.forEach(function (b) { b.classList.remove('active'); });
-      tabPanes.forEach(function (p) { p.classList.add('hidden'); });
-
-      // Activate clicked button
-      btn.classList.add('active');
-
-      // Show corresponding pane
-      var paneId = 'tab-' + btn.dataset.tab;
-      var pane = document.getElementById(paneId);
-      if (pane) { pane.classList.remove('hidden'); }
-
-      // Side-effect: load ledger when switching to ledger tab
-      if (btn.dataset.tab === 'ledger') {
-        fetchLedger(1);
-      }
+  var items = document.querySelectorAll('.sidebar-item');
+  items.forEach(function (item) {
+    item.addEventListener('click', function () {
+      var tab = item.dataset.tab;
+      // Deactivate all
+      items.forEach(function (i) { i.classList.remove('active'); });
+      document.querySelectorAll('.tab-content').forEach(function (s) {
+        s.classList.add('hidden');
+      });
+      // Activate selected
+      item.classList.add('active');
+      var section = document.getElementById('tab-' + tab);
+      if (section) { section.classList.remove('hidden'); }
+      if (tab === 'ledger') { fetchLedger(1); }
+      if (tab === 'recurring') { fetchRecurring(); }
     });
   });
+  // Activate dashboard by default
+  var first = document.querySelector('.sidebar-item[data-tab="dashboard"]');
+  if (first) { first.click(); }
 }
 
 /* ----------------------------------------------------------
@@ -860,8 +876,8 @@ function fetchStatus() {
     .then(function (r) { return r.json(); })
     .then(function (data) {
       updateStatus(data);
-      var ledgerBtn = document.querySelector('.tab-btn[data-tab="ledger"]');
-      if (ledgerBtn && ledgerBtn.classList.contains('active')) {
+      var ledgerItem = document.querySelector('.sidebar-item[data-tab="ledger"]');
+      if (ledgerItem && ledgerItem.classList.contains('active')) {
         fetchLedger(currentLedgerPage || 1);
       }
     })

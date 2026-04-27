@@ -71,60 +71,28 @@
       .settings-section a { color: #1d4ed8; text-decoration: none; font-size: 0.85rem; }
       .settings-section a:hover { text-decoration: underline; }
 
-      /* App shell */
-      .app-shell { display: flex; flex-direction: column; min-height: 100vh; }
-
       /* Top bar */
       .top-bar {
         display: flex;
         align-items: center;
         gap: 1rem;
         padding: 0 1.25rem;
-        height: 56px;
+        height: 52px;
         background: #fff;
         border-bottom: 1px solid #e5e7eb;
         position: sticky;
         top: 0;
         z-index: 100;
       }
-      .top-bar-brand { font-size: 1.1rem; font-weight: 700; color: #1d4ed8; flex-shrink: 0; }
-      .top-bar select { padding: 0.35rem 0.6rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.85rem; max-width: 200px; }
-      .top-bar-spacer { flex: 1; }
+      .brand { font-size: 1.1rem; font-weight: 700; color: #1d4ed8; flex-shrink: 0; }
+      .top-bar-right { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
       #model-badge { font-size: 0.75rem; font-weight: 600; background: #dbeafe; color: #1e40af; padding: 0.25rem 0.6rem; border-radius: 999px; flex-shrink: 0; }
       #boot-warning { font-size: 0.8rem; color: #92400e; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.3rem 0.75rem; }
       #boot-warning.hidden { display: none; }
-      #settings-open { background: none; border: none; cursor: pointer; font-size: 1.25rem; padding: 0.25rem 0.5rem; color: #6b7280; border-radius: 6px; }
-      #settings-open:hover { background: #f3f4f6; color: #111827; }
+      .icon-btn { background: none; border: none; cursor: pointer; font-size: 1.25rem; padding: 0.25rem 0.5rem; color: #6b7280; border-radius: 6px; }
+      .icon-btn:hover { background: #f3f4f6; color: #111827; }
       #settings-close { background: none; border: none; cursor: pointer; font-size: 1.25rem; color: #6b7280; padding: 0.2rem; }
       #settings-close:hover { color: #111827; }
-
-      /* Tab bar */
-      .tab-bar {
-        display: flex;
-        gap: 0;
-        background: #fff;
-        border-bottom: 1px solid #e5e7eb;
-        padding: 0 1.25rem;
-        overflow-x: auto;
-      }
-      .tab-btn {
-        padding: 0.75rem 1.25rem;
-        border: none;
-        background: none;
-        cursor: pointer;
-        font-size: 0.9rem;
-        font-weight: 500;
-        color: #6b7280;
-        border-bottom: 2px solid transparent;
-        transition: color 0.15s, border-color 0.15s;
-        white-space: nowrap;
-      }
-      .tab-btn:hover { color: #1d4ed8; }
-      .tab-btn.active { color: #1d4ed8; border-bottom-color: #1d4ed8; }
-
-      /* Tab content */
-      .tab-content { flex: 1; padding: 1.5rem 1.25rem; }
-      .tab-pane.hidden { display: none; }
 
       /* Metric cards */
       .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
@@ -195,7 +163,7 @@
       #document-drafts { display: flex; flex-direction: column; gap: 0.75rem; }
 
       /* Chat */
-      .chat-shell { display: flex; flex-direction: column; height: calc(100vh - 180px); }
+      .chat-shell { display: flex; flex-direction: column; height: calc(100vh - 132px); }
       .chat-controls { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 0; }
       .chat-controls button { padding: 0.4rem 1rem; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
       .chat-controls button:hover { background: #f3f4f6; }
@@ -268,38 +236,45 @@
       </div>
     </aside>
 
+    <!-- Top bar (model badge + settings only) -->
+    <header class="top-bar">
+      <span class="brand">CPA-Agent</span>
+      <div class="top-bar-right">
+        <span id="boot-warning" class="boot-warning hidden">&#9888; Connection issue</span>
+        <span id="model-badge" class="model-badge">—</span>
+        <button id="settings-open" class="icon-btn" aria-label="Settings">&#9881;</button>
+      </div>
+    </header>
+
     <!-- App shell -->
     <div class="app-shell">
 
-      <!-- Top bar -->
-      <header class="top-bar">
-        <span class="top-bar-brand">CPA-Agent</span>
+      <!-- Sidebar -->
+      <nav class="sidebar">
+        <div class="sidebar-business">
+          <div class="sidebar-biz-icon">N</div>
+          <select id="business-select" class="sidebar-biz-select" aria-label="Active business"></select>
+        </div>
 
-        <select id="business-select" aria-label="Active business"></select>
+        <a class="sidebar-item" data-tab="dashboard">&#11035; Dashboard</a>
 
-        <div id="boot-warning" class="hidden">Backend not connected</div>
+        <div class="sidebar-group-label">Books</div>
+        <a class="sidebar-item" data-tab="ledger">&#128212; Ledger</a>
+        <a class="sidebar-item" data-tab="recurring">&#128257; Recurring</a>
 
-        <div class="top-bar-spacer"></div>
+        <div class="sidebar-group-label">Reports</div>
+        <a class="sidebar-item" data-tab="reports">&#128200; P&amp;L</a>
 
-        <span id="model-badge">Model: Fast</span>
-
-        <button id="settings-open" aria-label="Open settings">&#9881;</button>
-      </header>
-
-      <!-- Tab navigation -->
-      <nav class="tab-bar" role="tablist">
-        <button class="tab-btn active" data-tab="dashboard" role="tab" aria-selected="true">Dashboard</button>
-        <button class="tab-btn" data-tab="ledger" role="tab" aria-selected="false">Ledger</button>
-        <button class="tab-btn" data-tab="reports" role="tab" aria-selected="false">Reports</button>
-        <button class="tab-btn" data-tab="documents" role="tab" aria-selected="false">Documents</button>
-        <button class="tab-btn" data-tab="chat" role="tab" aria-selected="false">Chat</button>
+        <div class="sidebar-group-label">Tools</div>
+        <a class="sidebar-item" data-tab="documents">&#128196; Documents</a>
+        <a class="sidebar-item" data-tab="chat">&#128172; Chat</a>
       </nav>
 
-      <!-- Tab content area -->
-      <main class="tab-content">
+      <!-- Main content -->
+      <main class="main-content">
 
         <!-- Dashboard tab -->
-        <section id="tab-dashboard" class="tab-pane" role="tabpanel">
+        <section id="tab-dashboard" class="tab-content">
 
           <div class="metrics-grid">
             <div class="metric-card">
@@ -338,7 +313,7 @@
         </section>
 
         <!-- Ledger tab -->
-        <section id="tab-ledger" class="tab-pane hidden" role="tabpanel">
+        <section id="tab-ledger" class="tab-content hidden">
 
           <div class="filter-bar">
             <input id="ledger-search" type="text" placeholder="Search transactions…" />
@@ -417,8 +392,20 @@
 
         </section>
 
+        <!-- Recurring tab (new) -->
+        <section id="tab-recurring" class="tab-content hidden">
+          <h2>Recurring Transactions</h2>
+          <p class="section-hint">Create via Chat: <em>"Schedule rent $2000 expense on the 1st every month"</em></p>
+          <table class="data-table" id="recurring-table">
+            <thead>
+              <tr><th>Description</th><th>Amount</th><th>Category</th><th>Frequency</th><th>Next Date</th><th>Actions</th></tr>
+            </thead>
+            <tbody id="recurring-body"></tbody>
+          </table>
+        </section>
+
         <!-- Reports tab -->
-        <section id="tab-reports" class="tab-pane hidden" role="tabpanel">
+        <section id="tab-reports" class="tab-content hidden">
 
           <div class="report-controls">
             <label for="report-from">From</label>
@@ -493,7 +480,7 @@
         </section>
 
         <!-- Documents tab -->
-        <section id="tab-documents" class="tab-pane hidden" role="tabpanel">
+        <section id="tab-documents" class="tab-content hidden">
 
           <div class="doc-upload">
             <form id="document-form">
@@ -518,7 +505,7 @@
         </section>
 
         <!-- Chat tab -->
-        <section id="tab-chat" class="tab-pane hidden" role="tabpanel">
+        <section id="tab-chat" class="tab-content hidden">
 
           <div class="chat-shell">
             <div class="chat-controls">
@@ -544,6 +531,7 @@
         </section>
 
       </main>
+
     </div>
 
     <script src="/ui/app.js"></script>
