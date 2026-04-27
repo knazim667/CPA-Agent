@@ -20,6 +20,7 @@ from core.model_client import get_model_client
 from memory_manager import MemoryManager
 from skills import GoogleDocsManager, GoogleSheetsManager, KnowledgeManager
 from skills.categorization_engine import CategorizationEngine
+from skills.recurring_engine import RecurringEngine
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -50,6 +51,9 @@ class CPAAgent:
         self.knowledge = KnowledgeManager()
         self.categorization = CategorizationEngine(
             rules_data=self.memory.load_category_rules()
+        )
+        self.recurring = RecurringEngine(
+            recurring_data=self.memory.load_recurring()
         )
         if not self.categorization._rules:
             try:
@@ -108,6 +112,9 @@ class CPAAgent:
 
     def _save_category_rules(self) -> None:
         self.memory.save_category_rules(self.categorization.get_rules_data())
+
+    def _save_recurring(self) -> None:
+        self.memory.save_recurring(self.recurring.get_recurring_data())
 
     def refresh_rules(self) -> None:
         with CUSTOM_RULES_PATH.open("r", encoding="utf-8") as handle:
@@ -748,6 +755,23 @@ class CPAAgent:
         }
 
     def get_status(self) -> dict[str, Any]:
+        # Run any recurring transactions due today
+        due = self.recurring.run_due_schedules()
+        if due:
+            self._save_recurring()
+            for entry in due:
+                try:
+                    self.record_structured_transaction(
+                        date=entry.get("last_posted_date", ""),
+                        description=entry["description"],
+                        category=entry["category"],
+                        amount=entry["amount"],
+                        entry_type=entry["entry_type"],
+                        notes="Auto-posted by recurring schedule",
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+
         short_term = self.memory.load_short_term_context()
         current = self.memory.get_current_business()
         return {
@@ -1238,7 +1262,75 @@ class CPAAgent:
         self.update_short_term_memory(user_input, draft_result)
         return self._clean_response_text(final_message)
 
+    def detect_recurring_command(self, user_input: str) -> dict | None:
+        import re as _re
+        lower = user_input.lower()
+        m = _re.search(
+            r"schedule\s+(.+?)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(expense|income)\s+on\s+the\s+(\d+)(?:st|nd|rd|th)?\s+every\s+(\w+)",
+            lower,
+        )
+        if m:
+            return {
+                "description": m.group(1).strip().title(),
+                "amount": float(m.group(2).replace(",", "")),
+                "entry_type": m.group(3).title(),
+                "day_of_period": int(m.group(4)),
+                "frequency": m.group(5).rstrip("s"),
+            }
+        if "cancel" in lower and "recurring" in lower:
+            return {"cancel": True, "raw": user_input}
+        if ("show" in lower or "list" in lower) and "recurring" in lower:
+            return {"list": True}
+        return None
+
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
+        import calendar as _cal
+        from datetime import date as _date
+
+        recurring_cmd = self.detect_recurring_command(user_input)
+        if recurring_cmd:
+            if recurring_cmd.get("list"):
+                schedules = self.recurring.list_schedules()
+                msg = f"{len(schedules)} recurring schedule(s) active." if schedules else "No recurring schedules."
+                return {"message": msg, "status": self.get_status(), "presentation": None}
+            if recurring_cmd.get("cancel"):
+                keyword = user_input.lower().replace("cancel", "").replace("recurring", "").strip()
+                for s in self.recurring.list_schedules():
+                    if keyword in s["description"].lower():
+                        self.recurring.cancel_schedule(s["id"])
+                        self._save_recurring()
+                        return {"message": f"Cancelled recurring: {s['description']}.", "status": self.get_status(), "presentation": None}
+                return {"message": "No matching recurring schedule found.", "status": self.get_status(), "presentation": None}
+            # Create new schedule
+            today = _date.today()
+            day = recurring_cmd["day_of_period"]
+            freq = recurring_cmd["frequency"]
+            last_day = _cal.monthrange(today.year, today.month)[1]
+            start = _date(today.year, today.month, min(day, last_day)).isoformat()
+            if start < today.isoformat():
+                m2 = today.month % 12 + 1
+                y2 = today.year if today.month < 12 else today.year + 1
+                last2 = _cal.monthrange(y2, m2)[1]
+                start = _date(y2, m2, min(day, last2)).isoformat()
+            cat = self.categorization.suggest_category(recurring_cmd["description"])
+            category = cat["category"] if cat else "Misc"
+            freq_full = freq + "ly" if not freq.endswith("ly") else freq
+            schedule = self.recurring.create_schedule(
+                description=recurring_cmd["description"],
+                amount=recurring_cmd["amount"],
+                category=category,
+                entry_type=recurring_cmd["entry_type"],
+                frequency=freq_full,
+                day_of_period=day,
+                start_date=start,
+            )
+            self._save_recurring()
+            return {
+                "message": f"Recurring set — {schedule['description']} · ${schedule['amount']:.2f} · {schedule['entry_type']} · {schedule['frequency']} from {schedule['next_date']}.",
+                "status": self.get_status(),
+                "presentation": None,
+            }
+
         message = self.handle_command(user_input)
         status = self.get_status()
         conversation = status.get("conversation", [])

@@ -158,3 +158,22 @@ def test_save_category_rule(client):
     assert response.status_code == 200
     assert response.json()["ok"] is True
     web_app.agent._save_category_rules.assert_called_once()
+
+
+def test_get_recurring_returns_schedules(client):
+    import web_app
+    web_app.agent.recurring.list_schedules.return_value = [
+        {"id": "1", "description": "Rent", "amount": 2000.0, "category": "Rent",
+         "entry_type": "Expense", "frequency": "monthly", "day_of_period": 1,
+         "next_date": "2026-05-01", "active": True, "last_posted_date": None}
+    ]
+    response = client.get("/api/recurring")
+    assert response.status_code == 200
+    assert len(response.json()["schedules"]) == 1
+
+
+def test_delete_recurring_not_found(client):
+    import web_app
+    web_app.agent.recurring.cancel_schedule.return_value = False
+    response = client.delete("/api/recurring/nonexistent-id")
+    assert response.status_code == 404

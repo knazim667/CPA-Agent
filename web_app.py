@@ -84,6 +84,25 @@ class CategoryRuleRequest(BaseModel):
     category: str
 
 
+class RecurringCreateRequest(BaseModel):
+    description: str
+    amount: float
+    category: str
+    entry_type: str
+    frequency: str
+    day_of_period: int
+    start_date: str
+
+
+class RecurringUpdateRequest(BaseModel):
+    description: str | None = None
+    amount: float | None = None
+    category: str | None = None
+    frequency: str | None = None
+    day_of_period: int | None = None
+    next_date: str | None = None
+
+
 @app.get("/")
 def index() -> FileResponse:
     return FileResponse(UI_DIR / "index.html")
@@ -440,6 +459,46 @@ def save_category_rule(payload: CategoryRuleRequest) -> dict:
         rule = agent.categorization.save_rule(payload.description, payload.category)
         agent._save_category_rules()
         return {"ok": True, "rule": rule}
+
+
+@app.get("/api/recurring")
+def get_recurring() -> dict:
+    with agent_lock:
+        return {"schedules": agent.recurring.list_schedules()}
+
+
+@app.post("/api/recurring")
+def create_recurring(payload: RecurringCreateRequest) -> dict:
+    with agent_lock:
+        schedule = agent.recurring.create_schedule(
+            description=payload.description, amount=payload.amount,
+            category=payload.category, entry_type=payload.entry_type,
+            frequency=payload.frequency, day_of_period=payload.day_of_period,
+            start_date=payload.start_date,
+        )
+        agent._save_recurring()
+        return {"ok": True, "schedule": schedule}
+
+
+@app.delete("/api/recurring/{schedule_id}")
+def cancel_recurring(schedule_id: str) -> dict:
+    with agent_lock:
+        found = agent.recurring.cancel_schedule(schedule_id)
+        if not found:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        agent._save_recurring()
+        return {"ok": True}
+
+
+@app.put("/api/recurring/{schedule_id}")
+def update_recurring(schedule_id: str, payload: RecurringUpdateRequest) -> dict:
+    with agent_lock:
+        updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+        result = agent.recurring.update_schedule(schedule_id, updates)
+        if not result:
+            raise HTTPException(status_code=404, detail="Schedule not found")
+        agent._save_recurring()
+        return {"ok": True, "schedule": result}
 
 
 def main() -> int:
