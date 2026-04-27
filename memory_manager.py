@@ -241,14 +241,14 @@ class MemoryManager:
     def _category_rules_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "category_rules.json"
 
-    def load_category_rules(self) -> dict:
+    def load_category_rules(self) -> dict[str, Any]:
         path = self._category_rules_path()
         if not path.exists():
             return {"rules": []}
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
 
-    def save_category_rules(self, data: dict) -> None:
+    def save_category_rules(self, data: dict[str, Any]) -> None:
         path = self._category_rules_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
@@ -256,14 +256,14 @@ class MemoryManager:
     def _recurring_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "recurring.json"
 
-    def load_recurring(self) -> dict:
+    def load_recurring(self) -> dict[str, Any]:
         path = self._recurring_path()
         if not path.exists():
             return {"schedules": []}
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
 
-    def save_recurring(self, data: dict) -> None:
+    def save_recurring(self, data: dict[str, Any]) -> None:
         path = self._recurring_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
