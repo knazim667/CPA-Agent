@@ -237,3 +237,33 @@ class MemoryManager:
     def load_learned_sources(self) -> dict[str, Any]:
         with self.learned_sources_path.open("r", encoding="utf-8") as handle:
             return json.load(handle)
+
+    def _category_rules_path(self) -> Path:
+        return self.long_term_dir / self.current_business_key / "category_rules.json"
+
+    def load_category_rules(self) -> dict:
+        path = self._category_rules_path()
+        if not path.exists():
+            return {"rules": []}
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_category_rules(self, data: dict) -> None:
+        path = self._category_rules_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _recurring_path(self) -> Path:
+        return self.long_term_dir / self.current_business_key / "recurring.json"
+
+    def load_recurring(self) -> dict:
+        path = self._recurring_path()
+        if not path.exists():
+            return {"schedules": []}
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+
+    def save_recurring(self, data: dict) -> None:
+        path = self._recurring_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
