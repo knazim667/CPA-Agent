@@ -662,7 +662,7 @@ class CPAAgent:
             try:
                 rows = self.sheets.read_range(
                     spreadsheet_id=current["google_sheet_id"],
-                    range_name="Ledger!A1:G50",
+                    range_name="Ledger!A1:G",
                 )
                 totals = self._summarize_ledger_rows(rows)
             except Exception as exc:  # noqa: BLE001

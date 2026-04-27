@@ -41,3 +41,20 @@ def test_bulk_values_generic_business():
     rows = agent._infer_bulk_values_from_user_input(user_input, params)
     assert len(rows) == 3
     assert "Office chair" in [r[1] for r in rows]
+
+
+def test_dashboard_reads_beyond_50_rows():
+    agent = make_agent()
+    many_rows = [["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"]]
+    for i in range(60):
+        many_rows.append([f"2026-01-{(i % 28) + 1:02d}", f"Item {i}", "Office", "10.00", "Expense", "", ""])
+    agent.sheets = MagicMock()
+    agent.sheets.read_range.return_value = many_rows
+    agent.memory.get_current_business.return_value = {"google_sheet_id": "sheet-id", "business_name": "Biz"}
+    agent.memory.load_skill_memory.return_value = {"history": []}
+    agent.memory.load_transaction_audit.return_value = {"entries": []}
+    agent.memory.load_short_term_context.return_value = {"conversation": []}
+    snapshot = agent.get_dashboard_snapshot()
+    call_args = agent.sheets.read_range.call_args
+    assert "A1:G50" not in str(call_args)
+    assert snapshot["transaction_count"] == 60
