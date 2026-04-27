@@ -19,6 +19,25 @@ class GoogleSheetsManager:
             self._service = self.auth.build_service("sheets", "v4")
         return self._service
 
+    def _reset_service(self) -> None:
+        self._service = None
+        self.auth._services.pop("sheets:v4", None)
+
+    @staticmethod
+    def _is_broken_pipe_error(exc: Exception) -> bool:
+        if isinstance(exc, BrokenPipeError):
+            return True
+        return isinstance(exc, OSError) and getattr(exc, "errno", None) == 32
+
+    def _execute(self, request_factory):
+        try:
+            return request_factory(self._get_service()).execute()
+        except Exception as exc:  # noqa: BLE001
+            if not self._is_broken_pipe_error(exc):
+                raise
+            self._reset_service()
+            return request_factory(self._get_service()).execute()
+
     def create_spreadsheet(
         self,
         title: str,
@@ -26,15 +45,14 @@ class GoogleSheetsManager:
         header_row: list[str] | None = None,
     ) -> dict[str, Any]:
         spreadsheet = (
-            self._get_service()
-            .spreadsheets()
-            .create(
-                body={
-                    "properties": {"title": title},
-                    "sheets": [{"properties": {"title": worksheet_name}}],
-                }
+            self._execute(
+                lambda service: service.spreadsheets().create(
+                    body={
+                        "properties": {"title": title},
+                        "sheets": [{"properties": {"title": worksheet_name}}],
+                    }
+                )
             )
-            .execute()
         )
         spreadsheet_id = spreadsheet["spreadsheetId"]
         if header_row:
@@ -47,13 +65,12 @@ class GoogleSheetsManager:
 
     def rename_spreadsheet(self, spreadsheet_id: str, title: str) -> dict[str, Any]:
         return (
-            self._get_service()
-            .spreadsheets()
-            .batchUpdate(
-                spreadsheetId=spreadsheet_id,
-                body={"requests": [{"updateSpreadsheetProperties": {"properties": {"title": title}, "fields": "title"}}]},
+            self._execute(
+                lambda service: service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={"requests": [{"updateSpreadsheetProperties": {"properties": {"title": title}, "fields": "title"}}]},
+                )
             )
-            .execute()
         )
 
     def ensure_ledger_sheet(
@@ -62,23 +79,25 @@ class GoogleSheetsManager:
         worksheet_name: str = "Ledger",
         header_row: list[str] | None = None,
     ) -> dict[str, Any]:
-        spreadsheet = self._get_service().spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        spreadsheet = self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
         sheet_names = {sheet["properties"]["title"] for sheet in spreadsheet.get("sheets", [])}
         if worksheet_name not in sheet_names:
-            self._get_service().spreadsheets().batchUpdate(
-                spreadsheetId=spreadsheet_id,
-                body={"requests": [{"addSheet": {"properties": {"title": worksheet_name}}}]},
-            ).execute()
+            self._execute(
+                lambda service: service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body={"requests": [{"addSheet": {"properties": {"title": worksheet_name}}}]},
+                )
+            )
         if header_row:
             self.update_range(
                 spreadsheet_id=spreadsheet_id,
                 range_name=f"{worksheet_name}!A1:{self._column_letter(len(header_row))}1",
                 values=[header_row],
             )
-        return self._get_service().spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        return self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
 
     def ensure_financial_workbook(self, spreadsheet_id: str, business_name: str) -> dict[str, Any]:
-        spreadsheet = self._get_service().spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        spreadsheet = self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
         sheets = spreadsheet.get("sheets", [])
         by_name = {sheet["properties"]["title"]: sheet["properties"]["sheetId"] for sheet in sheets}
         requests_body = {"requests": []}
@@ -88,11 +107,13 @@ class GoogleSheetsManager:
                 requests_body["requests"].append({"addSheet": {"properties": {"title": title}}})
 
         if requests_body["requests"]:
-            self._get_service().spreadsheets().batchUpdate(
-                spreadsheetId=spreadsheet_id,
-                body=requests_body,
-            ).execute()
-            spreadsheet = self._get_service().spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+            self._execute(
+                lambda service: service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body=requests_body,
+                )
+            )
+            spreadsheet = self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
             sheets = spreadsheet.get("sheets", [])
             by_name = {sheet["properties"]["title"]: sheet["properties"]["sheetId"] for sheet in sheets}
 
@@ -125,15 +146,16 @@ class GoogleSheetsManager:
             ],
         )
         self.apply_accounting_layout(spreadsheet_id, by_name)
-        return self._get_service().spreadsheets().get(spreadsheetId=spreadsheet_id).execute()
+        return self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
 
     def read_range(self, spreadsheet_id: str, range_name: str) -> list[list[str]]:
         response = (
-            self._get_service()
-            .spreadsheets()
-            .values()
-            .get(spreadsheetId=spreadsheet_id, range=range_name)
-            .execute()
+            self._execute(
+                lambda service: service.spreadsheets().values().get(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name,
+                )
+            )
         )
         return response.get("values", [])
 
@@ -145,17 +167,15 @@ class GoogleSheetsManager:
     ) -> dict[str, Any]:
         body = {"values": [row_values]}
         return (
-            self._get_service()
-            .spreadsheets()
-            .values()
-            .append(
-                spreadsheetId=spreadsheet_id,
-                range=f"{worksheet_name}!A:Z",
-                valueInputOption="USER_ENTERED",
-                insertDataOption="INSERT_ROWS",
-                body=body,
+            self._execute(
+                lambda service: service.spreadsheets().values().append(
+                    spreadsheetId=spreadsheet_id,
+                    range=f"{worksheet_name}!A:Z",
+                    valueInputOption="USER_ENTERED",
+                    insertDataOption="INSERT_ROWS",
+                    body=body,
+                )
             )
-            .execute()
         )
 
     def update_range(
@@ -165,16 +185,14 @@ class GoogleSheetsManager:
         values: list[list[Any]],
     ) -> dict[str, Any]:
         return (
-            self._get_service()
-            .spreadsheets()
-            .values()
-            .update(
-                spreadsheetId=spreadsheet_id,
-                range=range_name,
-                valueInputOption="USER_ENTERED",
-                body={"values": values},
+            self._execute(
+                lambda service: service.spreadsheets().values().update(
+                    spreadsheetId=spreadsheet_id,
+                    range=range_name,
+                    valueInputOption="USER_ENTERED",
+                    body={"values": values},
+                )
             )
-            .execute()
         )
 
     def format_currency_column(
@@ -207,10 +225,12 @@ class GoogleSheetsManager:
             ]
         }
         return (
-            self._get_service()
-            .spreadsheets()
-            .batchUpdate(spreadsheetId=spreadsheet_id, body=requests_body)
-            .execute()
+            self._execute(
+                lambda service: service.spreadsheets().batchUpdate(
+                    spreadsheetId=spreadsheet_id,
+                    body=requests_body,
+                )
+            )
         )
 
     def apply_accounting_layout(self, spreadsheet_id: str, sheet_map: dict[str, int]) -> dict[str, Any]:

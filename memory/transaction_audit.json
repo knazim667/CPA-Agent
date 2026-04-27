@@ -145,6 +145,100 @@
           ]
         ]
       }
+    },
+    {
+      "timestamp": 1774446682.623011,
+      "business": "Business_A",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "2026-03-25",
+          "Content learning course",
+          "Education",
+          98,
+          "Expense",
+          "N/A",
+          "Purchased online course for content creation"
+        ],
+        [
+          "2026-03-25",
+          "ChatGPT Plus subscription",
+          "Software",
+          20,
+          "Expense",
+          "N/A",
+          "Monthly subscription for content creation scripts"
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1aryPX5AQIHzwPsO4tcHI_AinyXzlzSGAqy0HB8FudzQ",
+        "updatedRange": "Ledger!A2:G3",
+        "updatedRows": 2,
+        "updatedColumns": 7,
+        "updatedCells": 14
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A2:G3",
+        "values": [
+          [
+            "03/25/2026",
+            "Content learning course",
+            "Education",
+            "$98.00",
+            "Expense",
+            "N/A",
+            "Purchased online course for content creation"
+          ],
+          [
+            "03/25/2026",
+            "ChatGPT Plus subscription",
+            "Software",
+            "$20.00",
+            "Expense",
+            "N/A",
+            "Monthly subscription for content creation scripts"
+          ]
+        ]
+      }
+    },
+    {
+      "timestamp": 1774838231.772296,
+      "business": "Business_A",
+      "mode": "approved_document_bulk_update",
+      "requested_payload": [
+        [
+          "2026-03-28",
+          "HeyGen Creator Unlimited Platform subscription",
+          "Subscription",
+          30.81,
+          "Expense",
+          "Receipt 23327690 / Invoice FBLFY7AV0001",
+          "Paid via Visa ending 8512. Includes $1.81 Massachusetts sales tax."
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1aryPX5AQIHzwPsO4tcHI_AinyXzlzSGAqy0HB8FudzQ",
+        "updatedRange": "Ledger!A4:G4",
+        "updatedRows": 1,
+        "updatedColumns": 7,
+        "updatedCells": 7
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A4:G4",
+        "values": [
+          [
+            "03/28/2026",
+            "HeyGen Creator Unlimited Platform subscription",
+            "Subscription",
+            "$30.81",
+            "Expense",
+            "Receipt 23327690 / Invoice FBLFY7AV0001",
+            "Paid via Visa ending 8512. Includes $1.81 Massachusetts sales tax."
+          ]
+        ]
+      }
     }
   ]
 }
