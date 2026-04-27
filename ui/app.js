@@ -479,7 +479,52 @@ function initBusinessSwitch() {
 }
 
 /* ----------------------------------------------------------
-   17. Fetch ledger
+   17. Category badge helpers
+   ---------------------------------------------------------- */
+
+var COMMON_CATEGORIES = [
+  "Meals & Entertainment","Cloud Infra","Office Supplies","Rent",
+  "Utilities","Marketing","Travel","Payroll","Professional Services",
+  "Software","Equipment","Misc"
+];
+
+function renderCategoryCell(td, description, category) {
+  td.textContent = '';
+  var badge = document.createElement('span');
+  var known = category && category.toLowerCase() !== 'uncategorized' && category !== '';
+  badge.className = known ? 'cat-badge-ai' : 'cat-badge-uncategorized';
+  badge.textContent = known ? category : '? Uncategorized';
+  badge.addEventListener('click', function () {
+    td.textContent = '';
+    var sel = document.createElement('select');
+    sel.style.fontSize = '0.78rem';
+    var opts = known ? [category] : [];
+    COMMON_CATEGORIES.forEach(function (c) {
+      if (opts.indexOf(c) === -1) { opts.push(c); }
+    });
+    opts.forEach(function (c) {
+      var o = document.createElement('option');
+      o.value = c; o.textContent = c;
+      if (c === category) { o.selected = true; }
+      sel.appendChild(o);
+    });
+    sel.addEventListener('change', function () {
+      var chosen = sel.value;
+      fetch('/api/category-rule', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: description, category: chosen })
+      }).catch(function () {});
+      renderCategoryCell(td, description, chosen);
+    });
+    td.appendChild(sel);
+    sel.focus();
+  });
+  td.appendChild(badge);
+}
+
+/* ----------------------------------------------------------
+   18. Fetch ledger
    ---------------------------------------------------------- */
 
 function fetchLedger(page) {
@@ -508,13 +553,19 @@ function fetchLedger(page) {
           row.date || row[0] || '',
           row.type || row[1] || '',
           row.description || row[2] || '',
-          row.category || row[3] || '',
+          null, // category — rendered via renderCategoryCell
           (row.amount !== undefined) ? fmt(row.amount) : (row[4] || ''),
           row.reference || row[5] || ''
         ];
-        cols.forEach(function (col) {
+        var description = row.description || row[2] || '';
+        var category = row.category || row[3] || '';
+        cols.forEach(function (col, idx) {
           var td = document.createElement('td');
-          td.textContent = col;
+          if (idx === 3) {
+            renderCategoryCell(td, description, category);
+          } else {
+            td.textContent = col;
+          }
           tr.appendChild(td);
         });
         ledgerBody.appendChild(tr);
