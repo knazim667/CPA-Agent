@@ -79,18 +79,54 @@ var voiceButton, voiceStatus, speakToggle;
    ---------------------------------------------------------- */
 
 function fetchRecurring() {
-  // Placeholder: full implementation comes in Task 8.
-  var body = document.getElementById('recurring-body');
-  if (body && !body.hasChildNodes()) {
+  fetch('/api/recurring')
+    .then(function (r) { return r.json(); })
+    .then(function (data) { renderRecurring(data.schedules || []); })
+    .catch(function (err) { console.error('fetchRecurring error:', err); });
+}
+
+function renderRecurring(schedules) {
+  var tbody = document.getElementById('recurring-body');
+  if (!tbody) { return; }
+  tbody.textContent = '';
+  if (!schedules.length) {
     var tr = document.createElement('tr');
     var td = document.createElement('td');
     td.colSpan = 6;
     td.style.color = '#6b7280';
-    td.style.textAlign = 'center';
-    td.textContent = 'No recurring transactions yet.';
+    td.style.padding = '1rem';
+    td.textContent = 'No recurring schedules. Use Chat to create one.';
     tr.appendChild(td);
-    body.appendChild(tr);
+    tbody.appendChild(tr);
+    return;
   }
+  schedules.forEach(function (s) {
+    var tr = document.createElement('tr');
+    [
+      s.description,
+      (s.entry_type === 'Expense' ? '−' : '+') + '$' + Number(s.amount).toFixed(2),
+      s.category,
+      s.frequency,
+      s.next_date,
+    ].forEach(function (val) {
+      var td = document.createElement('td');
+      td.textContent = val;
+      tr.appendChild(td);
+    });
+    var actionsTd = document.createElement('td');
+    var cancelBtn = document.createElement('button');
+    cancelBtn.textContent = '✕';
+    cancelBtn.style.cssText = 'background:none;border:none;color:#ef4444;cursor:pointer;font-size:1rem';
+    cancelBtn.addEventListener('click', function () {
+      if (!confirm('Cancel recurring: ' + s.description + '?')) { return; }
+      fetch('/api/recurring/' + s.id, { method: 'DELETE' })
+        .then(function () { fetchRecurring(); })
+        .catch(function (err) { showToast(String(err), 'error'); });
+    });
+    actionsTd.appendChild(cancelBtn);
+    tr.appendChild(actionsTd);
+    tbody.appendChild(tr);
+  });
 }
 
 /* ----------------------------------------------------------
@@ -1017,5 +1053,6 @@ document.addEventListener('DOMContentLoaded', function () {
 
   /* Initial data load + live 5-second poll */
   fetchStatus();
+  fetchRecurring();
   setInterval(fetchStatus, 5000);
 });
