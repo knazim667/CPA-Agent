@@ -31,7 +31,7 @@ class GoogleWorkspaceAuth:
 
     def get_credentials(self) -> Credentials | UserCredentials:
         if self._credentials is None:
-            if self._oauth_client_exists():
+            if self._oauth_client_exists() or os.path.exists(self.oauth_token_path):
                 self._credentials = self._load_oauth_credentials()
             elif not self.credentials_path:
                 raise ValueError(
@@ -74,6 +74,12 @@ class GoogleWorkspaceAuth:
             credentials.refresh(Request())
             self._save_user_token(credentials)
             return credentials
+        if not self._oauth_client_exists():
+            raise ValueError(
+                "Google token is missing or invalid and no OAuth client file is available to re-authorize. "
+                "Place your OAuth client JSON at credentials/google-oauth-client.json or set "
+                "GOOGLE_OAUTH_CLIENT_SECRET_FILE, then run: python authorize_google_oauth.py"
+            )
         return self._run_oauth_flow()
 
     def _run_oauth_flow(self) -> UserCredentials:
