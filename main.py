@@ -21,6 +21,9 @@ from memory_manager import MemoryManager
 from skills import GoogleDocsManager, GoogleSheetsManager, KnowledgeManager
 from skills.categorization_engine import CategorizationEngine
 from skills.recurring_engine import RecurringEngine
+from skills.financial_statements import FinancialStatements
+from skills.budget_engine import BudgetEngine
+from skills.reconciliation_engine import ReconciliationEngine
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -55,6 +58,9 @@ class CPAAgent:
         self.recurring = RecurringEngine(
             recurring_data=self.memory.load_recurring()
         )
+        self.financial_statements = FinancialStatements()
+        self.budget_engine = BudgetEngine()
+        self.reconciliation_engine = ReconciliationEngine()
         if not self.categorization._rules:
             try:
                 profile = self.memory.get_current_business()
