@@ -671,10 +671,17 @@ def upload_bank_statement(file: UploadFile = File(...)) -> dict:
             # Match transactions
             matches = agent.reconciliation_engine.match_transactions(parsed, ledger_rows)
 
+            # Add IDs to unmatched bank transactions for frontend reference
+            unmatched_bank_with_ids = []
+            for i, tx in enumerate(matches["unmatched_bank"]):
+                tx_with_id = tx.copy()
+                tx_with_id["id"] = str(i)  # Simple index-based ID
+                unmatched_bank_with_ids.append(tx_with_id)
+
             return {
                 "parsed_count": len(parsed),
                 "matched": matches["matched"],
-                "unmatched_bank": matches["unmatched_bank"],
+                "unmatched_bank": unmatched_bank_with_ids,
                 "unmatched_ledger": matches["unmatched_ledger"]
             }
         finally:
@@ -683,6 +690,9 @@ def upload_bank_statement(file: UploadFile = File(...)) -> dict:
 
 
 class ReconcileResolveRequest(BaseModel):
+    date: str
+    description: str
+    amount: float
     action: str  # "add_to_ledger" or "mark_resolved"
 
 
@@ -693,11 +703,33 @@ def resolve_transaction(transaction_id: str, payload: ReconcileResolveRequest) -
         if action not in ["add_to_ledger", "mark_resolved"]:
             raise HTTPException(status_code=400, detail="Invalid action")
 
-        # For simplicity, we'll add a placeholder transaction
-        # In a full implementation, this would add the actual unmatched transaction
+        # For now, we ignore transaction_id since we're sending the data in the request body
+        # In a more robust implementation, we would use the ID to retrieve stored reconciliation data
+
         if action == "add_to_ledger":
-            # This would add the transaction to the ledger
-            return {"ok": True, "message": "Transaction added to ledger"}
+            # Add the transaction to the ledger
+            try:
+                # Determine if it's income or expense based on amount
+                entry_type = "Income" if payload.amount >= 0 else "Expense"
+                # For display, we want positive amounts in the ledger
+                ledger_amount = abs(payload.amount)
+
+                result = agent.record_structured_transaction(
+                    date=payload.date,
+                    description=payload.description,
+                    category="Uncategorized",  # Default category, user can update later
+                    amount=ledger_amount,
+                    entry_type=entry_type,
+                    reference="",
+                    notes=f"Added via bank reconciliation: {payload.description}"
+                )
+
+                if result["ok"]:
+                    return {"ok": True, "message": "Transaction added to ledger"}
+                else:
+                    return {"ok": False, "message": f"Failed to add transaction: {result.get('message', 'Unknown error')}"}
+            except Exception as exc:
+                return {"ok": False, "message": f"Error adding transaction to ledger: {exc}"}
         else:
             # Mark as resolved (no action needed)
             return {"ok": True, "message": "Transaction marked as resolved"}

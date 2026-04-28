@@ -32,11 +32,15 @@ class ReconciliationEngine:
 
                 if date and description and amount_str:
                     try:
+                        # Remove comments from amount string (everything after #)
+                        if '#' in amount_str:
+                            amount_str = amount_str.split('#')[0].strip()
+
                         # Parse date
                         parsed_date = None
                         for fmt in ('%Y-%m-%d', '%m/%d/%Y', '%d/%m/%Y'):
                             try:
-                                parsed_date = datetime.strptime(date, fmt)
+                                parsed_date = datetime.strptime(date.strip(), fmt)
                                 break
                             except ValueError:
                                 continue
@@ -67,10 +71,23 @@ class ReconciliationEngine:
         for row in ledger_rows:
             if len(row) >= 5:
                 try:
+                    ledger_date_str = str(row[0])
+                    ledger_description = str(row[1])
+                    ledger_amount_raw = str(row[3])
+                    ledger_type = str(row[4]).strip().lower()
+
+                    # Parse amount
+                    ledger_amount = float(ledger_amount_raw.replace('$', '').replace(',', ''))
+
+                    # Adjust sign based on transaction type (expenses are negative in bank statements)
+                    if ledger_type == "expense":
+                        ledger_amount = -ledger_amount
+                    # Income stays positive
+
                     ledger_dicts.append({
-                        'date': str(row[0]),
-                        'description': str(row[1]),
-                        'amount': float(str(row[3]).replace('$', '').replace(',', '')),
+                        'date': ledger_date_str,
+                        'description': ledger_description,
+                        'amount': ledger_amount,
                         'original_row': row
                     })
                 except (ValueError, IndexError):
@@ -110,7 +127,7 @@ class ReconciliationEngine:
                     best_score = desc_match
                     best_match_idx = i
 
-            if best_match_idx is not None and best_score > 0.5:  # Threshold for match
+            if best_match_idx is not None and best_score > 0.3:  # Threshold for match
                 matched.append({
                     'bank': bank_tx,
                     'ledger': ledger_dicts[best_match_idx]['original_row']
@@ -131,14 +148,63 @@ class ReconciliationEngine:
         }
 
     def _description_similarity(self, desc1: str, desc2: str) -> float:
-        """Simple similarity score based on common words."""
-        words1 = set(desc1.split())
-        words2 = set(desc2.split())
+        """Simple similarity score based on common words and abbreviations."""
+        # Handle empty descriptions
+        if not desc1 or not desc2:
+            return 0.0
+
+        desc1_lower = desc1.lower()
+        desc2_lower = desc2.lower()
+
+        # Check for exact match
+        if desc1_lower == desc2_lower:
+            return 1.0
+
+        # Check for substring matches (handles abbreviations like "AWS" in "Amazon Web Services")
+        if desc1_lower in desc2_lower or desc2_lower in desc1_lower:
+            return 0.8  # High score for substring matches
+
+        # Define common abbreviation mappings
+        abbreviation_map = {
+            'aws': ['amazon', 'web', 'services'],
+            'facebook': ['fb', 'facebook ads'],
+            'google': ['goog', 'google ads'],
+            'starbucks': ['sbux', 'starbucks coffee'],
+            'client': ['client payment', 'client invoice'],
+        }
+
+        # Check if either description is an abbreviation of the other
+        for full_form, abbreviations in abbreviation_map.items():
+            if full_form in desc1_lower:
+                for abbrev in abbreviations:
+                    if abbrev in desc2_lower:
+                        return 0.85
+            if full_form in desc2_lower:
+                for abbrev in abbreviations:
+                    if abbrev in desc1_lower:
+                        return 0.85
+
+        # Check for word-level substring matches (e.g., "aws" in "web services")
+        words1 = set(desc1_lower.split())
+        words2 = set(desc2_lower.split())
         if not words1 or not words2:
             return 0.0
+
+        # Check if any word is a substring of another word
+        for w1 in words1:
+            for w2 in words2:
+                if w1 in w2 or w2 in w1:
+                    return 0.7  # Good score for word-level substring matches
+
+        # Check for common word matches
         intersection = words1.intersection(words2)
         union = words1.union(words2)
-        return len(intersection) / len(union) if union else 0.0
+        jaccard = len(intersection) / len(union) if union else 0.0
+
+        # Boost score if there are common words
+        if len(intersection) > 0:
+            return max(jaccard, 0.5)  # At least 0.5 if there are common words
+        return jaccard
 
     def compute_difference(self, bank_balance: float, ledger_balance: float) -> float:
         """Compute difference between bank and ledger balances."""

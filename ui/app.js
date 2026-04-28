@@ -1016,6 +1016,155 @@ function initDocuments() {
   }
 }
 
+/* ----------------------------------------------------------
+   23. Bank Reconciliation
+   ---------------------------------------------------------- */
+
+function initReconcile() {
+  var reconcileForm = document.getElementById('reconcile-form');
+  if (!reconcileForm) { return; }
+
+  reconcileForm.addEventListener('submit', function (e) {
+    e.preventDefault();
+    var fileInput = document.getElementById('reconcile-file');
+    if (!fileInput || !fileInput.files || !fileInput.files.length) {
+      showToast('Please select a CSV file', 'error');
+      return;
+    }
+
+    var file = fileInput.files[0];
+    var formData = new FormData();
+    formData.append('file', file);
+
+    fetch('/api/reconcile/upload', {
+      method: 'POST',
+      body: formData
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        // Show results
+        var outputDiv = document.getElementById('reconcile-output');
+        if (outputDiv) { outputDiv.classList.remove('hidden'); }
+
+        // Update counts
+        var matchedCountEl = document.getElementById('rc-matched-count');
+        var unmatchedCountEl = document.getElementById('rc-unmatched-count');
+        if (matchedCountEl) { matchedCountEl.textContent = data.matched ? data.matched.length : 0; }
+        if (unmatchedCountEl) { unmatchedCountEl.textContent = data.unmatched_bank ? data.unmatched_bank.length : 0; }
+
+        // Render unmatched bank transactions
+        var reconcileBody = document.getElementById('reconcile-body');
+        if (reconcileBody) {
+          reconcileBody.textContent = '';
+          var unmatched = data.unmatched_bank || [];
+          if (unmatched.length === 0) {
+            var tr = document.createElement('tr');
+            var td = document.createElement('td');
+            td.colSpan = 4;
+            td.style.textAlign = 'center';
+            td.style.color = '#6b7280';
+            td.textContent = 'All transactions matched!';
+            tr.appendChild(td);
+            reconcileBody.appendChild(tr);
+          } else {
+            unmatched.forEach(function (tx) {
+              var tr = document.createElement('tr');
+              [
+                tx.date || '',
+                tx.description || '',
+                fmt(tx.amount || 0),
+                '<button class="resolve-btn" data-action="add_to_ledger">Add to Ledger</button>'
+              ].forEach(function (val, idx) {
+                var td = document.createElement('td');
+                if (idx === 3) { // Action column with button
+                  td.innerHTML = val;
+                } else {
+                  td.textContent = val;
+                }
+                tr.appendChild(td);
+              });
+              reconcileBody.appendChild(tr);
+            });
+          }
+        }
+      })
+      .catch(function (err) { showToast('Reconciliation error: ' + err, 'error'); });
+  });
+
+  // Handle resolve buttons in reconcile table
+  if (reconcileBody) {
+    reconcileBody.addEventListener('click', function (e) {
+      var btn = e.target.closest('.resolve-btn');
+      if (!btn) { return; }
+      var action = btn.dataset.action;
+      if (!action) { return; }
+
+      // Get transaction data from the row
+      var row = btn.closest('tr');
+      if (!row) { return; }
+
+      var cells = row.querySelectorAll('td');
+      if (cells.length < 4) { return; }
+
+      var transactionData = {
+        date: cells[0].textContent.trim(),
+        description: cells[1].textContent.trim(),
+        amount: cells[2].textContent.replace(/[$,]/g, ''),
+        action: action
+      };
+
+      // Convert amount to number (handle parentheses for negatives, etc.)
+      var amountStr = transactionData.amount;
+      // Remove $ and commas, handle parentheses as negative
+      amountStr = amountStr.replace(/[$,]/g, '');
+      if (amountStr.startsWith('(') && amountStr.endsWith(')')) {
+        amountStr = '-' + amountStr.substring(1, amountStr.length - 1);
+      }
+      transactionData.amount = parseFloat(amountStr) || 0;
+
+      // Send to backend
+      fetch('/api/reconcile/resolve/0', { // Using 0 as placeholder ID since we're sending data in body
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(transactionData)
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            showToast(data.message, 'success');
+            // Remove the row from the table since it's been resolved
+            row.remove();
+
+            // Update unmatched count
+            var unmatchedCountEl = document.getElementById('rc-unmatched-count');
+            if (unmatchedCountEl) {
+              var currentCount = parseInt(unmatchedCountEl.textContent) || 0;
+              unmatchedCountEl.textContent = Math.max(0, currentCount - 1);
+            }
+
+            // If no more unmatched transactions, show appropriate message
+            var reconcileBody = document.getElementById('reconcile-body');
+            if (reconcileBody && reconcileBody.rows.length === 0) {
+              var tr = document.createElement('tr');
+              var td = document.createElement('td');
+              td.colSpan = 4;
+              td.style.textAlign = 'center';
+              td.style.color = '#6b7280';
+              td.textContent = 'All transactions matched!';
+              tr.appendChild(td);
+              reconcileBody.appendChild(tr);
+            }
+          } else {
+            showToast(data.message || 'Error resolving transaction', 'error');
+          }
+        })
+        .catch(function (err) {
+          showToast('Error: ' + err, 'error');
+        });
+    });
+  }
+}
+
 function appendDraftCard(data) {
   if (!documentDrafts) { return; }
   var card = document.createElement('div');
@@ -1256,6 +1405,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initBudget();
   initDocuments();
   initChat();
+  initReconcile();
   configureVoice();
 
   /* Initial data load + live 5-second poll */
