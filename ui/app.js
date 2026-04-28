@@ -133,6 +133,191 @@ function renderRecurring(schedules) {
 }
 
 /* ----------------------------------------------------------
+   Balance Sheet
+   ---------------------------------------------------------- */
+
+function fetchBalanceSheet() {
+  var from = (document.getElementById('bs-from') || {}).value || '';
+  var to   = (document.getElementById('bs-to')   || {}).value || '';
+  var qs   = (from || to) ? '?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to) : '';
+  fetch('/api/balance-sheet' + qs)
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      function fmtUSD(v) { return '$' + Number(v || 0).toFixed(2); }
+      function setText(id, v) { var el = document.getElementById(id); if (el) { el.textContent = v; } }
+      setText('bs-cash',                fmtUSD(data.assets  && data.assets.cash));
+      setText('bs-accounts-receivable', fmtUSD(data.assets  && data.assets.accounts_receivable));
+      setText('bs-assets',              fmtUSD(data.assets  && data.assets.total));
+      setText('bs-accounts-payable',    fmtUSD(data.liabilities && data.liabilities.accounts_payable));
+      setText('bs-liabilities',         fmtUSD(data.liabilities && data.liabilities.total));
+      setText('bs-retained-earnings',   fmtUSD(data.equity  && data.equity.retained_earnings));
+      setText('bs-equity',              fmtUSD(data.equity  && data.equity.total));
+      setText('bs-balance-check',       data.balanced ? '✓ Balanced' : '✗ Not balanced');
+      setText('bs-note', data.approximate ? 'AR/AP data not yet available — Balance Sheet is approximate.' : '');
+      var out = document.getElementById('balance-sheet-output');
+      if (out) { out.classList.remove('hidden'); }
+    })
+    .catch(function (err) { showToast('Balance Sheet error: ' + err, 'error'); });
+}
+
+/* ----------------------------------------------------------
+   Cash Flow
+   ---------------------------------------------------------- */
+
+function fetchCashFlow() {
+  var from = (document.getElementById('cf-from') || {}).value || '';
+  var to   = (document.getElementById('cf-to')   || {}).value || '';
+  var qs   = (from || to) ? '?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to) : '';
+  fetch('/api/cash-flow' + qs)
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      function fmtSigned(v) { var n = Number(v || 0); return (n >= 0 ? '+' : '') + '$' + n.toFixed(2); }
+      function setText(id, v) { var el = document.getElementById(id); if (el) { el.textContent = v; } }
+      setText('cf-operating', fmtSigned(data.operating));
+      setText('cf-investing',  fmtSigned(data.investing));
+      setText('cf-financing',  fmtSigned(data.financing));
+      setText('cf-net',        fmtSigned(data.net_change));
+      var out = document.getElementById('cash-flow-output');
+      if (out) { out.classList.remove('hidden'); }
+    })
+    .catch(function (err) { showToast('Cash Flow error: ' + err, 'error'); });
+}
+
+/* ----------------------------------------------------------
+   Budget vs Actual
+   ---------------------------------------------------------- */
+
+function fetchBudget() {
+  var monthIn = document.getElementById('budget-month');
+  var month = (monthIn && monthIn.value) ? monthIn.value : new Date().toISOString().slice(0, 7);
+  fetch('/api/budget?month=' + encodeURIComponent(month))
+    .then(function (r) { return r.json(); })
+    .then(function (data) { renderBudget(data); })
+    .catch(function (err) { showToast('Budget error: ' + err, 'error'); });
+}
+
+function renderBudget(data) {
+  var tbody    = document.getElementById('budget-body');
+  var alertsEl = document.getElementById('budget-alerts');
+  var output   = document.getElementById('budget-output');
+  if (!tbody) { return; }
+
+  // Render alert banners
+  if (alertsEl) {
+    alertsEl.textContent = '';
+    (data.alerts || []).forEach(function (a) {
+      var div = document.createElement('div');
+      var isDanger = a.level === 'danger';
+      div.style.cssText = 'padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.4rem;font-size:0.82rem;' +
+        (isDanger
+          ? 'background:#fef2f2;color:#dc2626;border:1px solid #fca5a5'
+          : 'background:#fffbeb;color:#92400e;border:1px solid #fde68a');
+      var prefix = document.createTextNode((isDanger ? 'Over budget: ' : 'Near limit: ') +
+        a.category + ' — ' + a.pct.toFixed(0) + '% used');
+      div.appendChild(prefix);
+      alertsEl.appendChild(div);
+    });
+  }
+
+  tbody.textContent = '';
+  var budgets = data.budgets || [];
+
+  if (!budgets.length) {
+    var emptyTr = document.createElement('tr');
+    var emptyTd = document.createElement('td');
+    emptyTd.colSpan = 6;
+    emptyTd.style.cssText = 'color:#6b7280;padding:1rem';
+    emptyTd.textContent = 'No budgets set. Use the form above or Chat to add one.';
+    emptyTr.appendChild(emptyTd);
+    tbody.appendChild(emptyTr);
+  } else {
+    budgets.forEach(function (b) {
+      var pct      = Math.min(b.pct, 100);
+      var barColor = b.pct >= 100 ? '#dc2626' : b.pct >= 80 ? '#f59e0b' : '#16a34a';
+      var tr = document.createElement('tr');
+
+      [b.category, '$' + b.budget.toFixed(2), '$' + b.actual.toFixed(2), '$' + b.remaining.toFixed(2)].forEach(function (val) {
+        var td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+
+      // Progress bar (DOM only)
+      var barTd = document.createElement('td');
+      var track = document.createElement('div');
+      track.style.cssText = 'background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden';
+      var fill = document.createElement('div');
+      fill.style.cssText = 'width:' + pct + '%;background:' + barColor + ';height:8px;border-radius:99px';
+      track.appendChild(fill);
+      barTd.appendChild(track);
+      var pctLabel = document.createElement('span');
+      pctLabel.style.cssText = 'font-size:0.72rem;color:#64748b';
+      pctLabel.textContent = b.pct.toFixed(0) + '%';
+      barTd.appendChild(pctLabel);
+      tr.appendChild(barTd);
+
+      // Delete button
+      var delTd = document.createElement('td');
+      var delBtn = document.createElement('button');
+      delBtn.textContent = '✕';
+      delBtn.style.cssText = 'background:none;border:none;color:#ef4444;cursor:pointer;font-size:0.9rem';
+      (function (budgetId, catName) {
+        delBtn.addEventListener('click', function () {
+          if (!confirm('Remove budget for ' + catName + '?')) { return; }
+          fetch('/api/budget/' + budgetId, { method: 'DELETE' })
+            .then(function () { fetchBudget(); showToast('Budget removed', 'success'); })
+            .catch(function (err) { showToast(String(err), 'error'); });
+        });
+      })(b.id, b.category);
+      delTd.appendChild(delBtn);
+      tr.appendChild(delTd);
+      tbody.appendChild(tr);
+    });
+  }
+
+  if (output) { output.classList.remove('hidden'); }
+}
+
+function initBudget() {
+  var monthIn = document.getElementById('budget-month');
+  if (monthIn && !monthIn.value) { monthIn.value = new Date().toISOString().slice(0, 7); }
+
+  var genBtn = document.getElementById('budget-generate-btn');
+  if (genBtn) { genBtn.addEventListener('click', function () { fetchBudget(); }); }
+
+  var addForm = document.getElementById('budget-add-form');
+  if (addForm) {
+    addForm.addEventListener('submit', function (e) {
+      e.preventDefault();
+      var catEl = document.getElementById('budget-cat-input');
+      var amtEl = document.getElementById('budget-amt-input');
+      var cat = catEl ? catEl.value.trim() : '';
+      var amt = amtEl ? parseFloat(amtEl.value) : 0;
+      if (!cat || !amt) { showToast('Category and amount are required', 'error'); return; }
+      fetch('/api/budget', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ category: cat, amount: amt, period: 'monthly' })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function () {
+          showToast('Budget set for ' + cat, 'success');
+          addForm.reset();
+          if (monthIn) { monthIn.value = new Date().toISOString().slice(0, 7); }
+          fetchBudget();
+        })
+        .catch(function (err) { showToast(String(err), 'error'); });
+    });
+  }
+
+  // Wire generate buttons for balance sheet and cash flow
+  var bsBtn = document.getElementById('bs-generate-btn');
+  if (bsBtn) { bsBtn.addEventListener('click', function () { fetchBalanceSheet(); }); }
+  var cfBtn = document.getElementById('cf-generate-btn');
+  if (cfBtn) { cfBtn.addEventListener('click', function () { fetchCashFlow(); }); }
+}
+
+/* ----------------------------------------------------------
    6. Tab routing
    ---------------------------------------------------------- */
 
@@ -1068,6 +1253,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initLedger();
   initTransactionForm();
   initReports();
+  initBudget();
   initDocuments();
   initChat();
   configureVoice();

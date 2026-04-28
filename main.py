@@ -1289,9 +1289,53 @@ class CPAAgent:
             return {"list": True}
         return None
 
+    def detect_budget_command(self, user_input: str) -> dict | None:
+        import re as _re
+        lower = user_input.lower()
+        # "set marketing budget $1000 per month" or "budget marketing $1000 monthly"
+        m = _re.search(
+            r"(?:set\s+)?(?P<cat>[a-z &]+?)\s+budget\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(?:per\s+month|monthly|a\s+month)",
+            lower,
+        )
+        if m:
+            return {
+                "category": m.group("cat").strip().title(),
+                "amount": float(m.group(2).replace(",", "")),
+            }
+        if ("show" in lower or "list" in lower) and "budget" in lower:
+            return {"list": True}
+        return None
+
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
         import calendar as _cal
         from datetime import date as _date
+
+        # Budget command check (runs before recurring to avoid false matches)
+        budget_cmd = self.detect_budget_command(user_input)
+        if budget_cmd:
+            if budget_cmd.get("list"):
+                budget_data = self.memory.load_budgets()
+                count = len(budget_data.get("budgets", []))
+                return {"message": f"{count} budget(s) set.", "status": self.get_status(), "presentation": None}
+            new_budget = self.budget_engine.set_budget(
+                category=budget_cmd["category"],
+                amount=budget_cmd["amount"],
+                period="monthly",
+                business_key=self.memory.current_business_key,
+            )
+            budget_data = self.memory.load_budgets()
+            # Remove existing budget for same category before adding new one
+            budget_data["budgets"] = [
+                b for b in budget_data["budgets"]
+                if b.get("category", "").lower() != budget_cmd["category"].lower()
+            ]
+            budget_data["budgets"].append(new_budget)
+            self.memory.save_budgets(budget_data)
+            return {
+                "message": f"Budget set — {new_budget['category']} · ${new_budget['amount']:.2f}/month.",
+                "status": self.get_status(),
+                "presentation": None,
+            }
 
         recurring_cmd = self.detect_recurring_command(user_input)
         if recurring_cmd:
