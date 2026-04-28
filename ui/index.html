@@ -264,6 +264,14 @@
 
         <div class="sidebar-group-label">Reports</div>
         <a class="sidebar-item" href="javascript:void(0)" data-tab="reports">&#128200; P&amp;L</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="balance-sheet">&#128202; Balance Sheet</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="cash-flow">&#128203; Cash Flow</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="budget">&#128204; Budget</a>
+
+        <div class="sidebar-group-label">Operations</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="ar-ap">&#128221; AR/AP</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="reconcile">&#128205; Reconcile</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="tax">&#128206; Tax</a>
 
         <div class="sidebar-group-label">Tools</div>
         <a class="sidebar-item" href="javascript:void(0)" data-tab="documents">&#128196; Documents</a>
@@ -479,8 +487,77 @@
 
         </section>
 
-        <!-- Documents tab -->
-        <section id="tab-documents" class="tab-content hidden">
+        <!-- Balance Sheet tab -->
+        <section id="tab-balance-sheet" class="tab-content hidden">
+          <h2>Balance Sheet</h2>
+          <div class="report-controls">
+            <label for="bs-from">From</label>
+            <input id="bs-from" type="date" />
+            <label for="bs-to">To</label>
+            <input id="bs-to" type="date" />
+            <button id="bs-generate-btn">Generate</button>
+          </div>
+          <div id="balance-sheet-output" class="hidden">
+            <div class="balance-sheet-table">
+              <table>
+                <thead>
+                  <tr>
+                    <th></th>
+                    <th>Amount</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  <tr>
+                    <td>Assets</td>
+                    <td id="bs-assets"></td>
+                  </tr>
+                  <tr>
+                    <td>  Cash</td>
+                    <td id="bs-cash"></td>
+                  </tr>
+                  <tr>
+                    <td>  Accounts Receivable</td>
+                    <td id="bs-accounts-receivable"></td>
+                  </tr>
+                  <tr>
+                    <td>Liabilities</td>
+                    <td id="bs-liabilities"></td>
+                  </tr>
+                  <tr>
+                    <td>  Accounts Payable</td>
+                    <td id="bs-accounts-payable"></td>
+                  </tr>
+                  <tr>
+                    <td>Equity</td>
+                    <td id="bs-equity"></td>
+                  </tr>
+                  <tr>
+                    <td>  Retained Earnings</td>
+                    <td id="bs-retained-earnings"></td>
+                  </tr>
+                </tbody>
+                <tfoot>
+                  <tr>
+                    <td><strong>Balance Check</strong></td>
+                    <td id="bs-balance-check"></td>
+                  </tr>
+                </tfoot>
+              </table>
+              <p id="bs-note" class="section-hint"></p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Cash Flow tab -->
+        <section id="tab-cash-flow" class="tab-content hidden">
+          <h2>Cash Flow Statement</h2>
+          <div class="report-controls">
+            <label for="cf-from">From</label>
+            <input id="cf-from" type="date" />
+            <label for="cf-to">To</label>
+            <input id="cf-to" type="date" />
+            <button id="cf-generate-btn">Generate</button>
+          </div>
 
           <div class="doc-upload">
             <form id="document-form">

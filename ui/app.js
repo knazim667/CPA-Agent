@@ -71,6 +71,9 @@ var txDate, txType, txDescription, txCategory, txAmount, txReference, txNotes;
 var reportFrom, reportTo;
 var incomeBody, expenseBody, incomeTotalCell, expenseTotalCell, netProfitValue, netProfitRow;
 var reportOutput;
+var balanceSheetOutput, cashFlowOutput;
+var budgetMonthInput, budgetGenerateBtn, budgetOutput, budgetBody, budgetAlerts;
+var arApBody, reconcileBody, taxOutput;
 var documentDrafts;
 var voiceButton, voiceStatus, speakToggle;
 
@@ -149,6 +152,12 @@ function initTabs() {
       if (section) { section.classList.remove('hidden'); }
       if (tab === 'ledger') { fetchLedger(1); }
       if (tab === 'recurring') { fetchRecurring(); }
+      if (tab === 'balance-sheet') { fetchBalanceSheet(); }
+      if (tab === 'cash-flow') { fetchCashFlow(); }
+      if (tab === 'budget') { fetchBudget(); }
+      if (tab === 'ar-ap') { fetchArAp(); }
+      if (tab === 'reconcile') { /* upload handled via form */ }
+      if (tab === 'tax') { fetchTax(); }
     });
   });
   // Activate dashboard by default
@@ -1030,6 +1039,18 @@ document.addEventListener('DOMContentLoaded', function () {
   netProfitValue       = document.getElementById('net-profit-value');
   netProfitRow         = document.getElementById('net-profit-row');
   reportOutput         = document.getElementById('report-output');
+  balanceSheetOutput   = document.getElementById('balance-sheet-output');
+  cashFlowOutput       = document.getElementById('cash-flow-output');
+  budgetMonthInput     = document.getElementById('budget-month');
+  budgetGenerateBtn    = document.getElementById('budget-generate-btn');
+  budgetOutput         = document.getElementById('budget-output');
+  budgetBody           = document.getElementById('budget-body');
+  budgetAlerts         = document.getElementById('budget-alerts');
+  arApBody             = document.getElementById('ar-ap-body');
+  reconcileBody        = document.getElementById('reconcile-body');
+  taxOutput            = document.getElementById('tax-output');
+  netProfitValue       = document.getElementById('net-profit-value');
+  netProfitRow         = document.getElementById('net-profit-row');
   documentDrafts       = document.getElementById('document-drafts');
   voiceButton          = document.getElementById('voice-button');
   voiceStatus          = document.getElementById('voice-status');
