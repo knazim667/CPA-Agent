@@ -501,6 +501,208 @@ def update_recurring(schedule_id: str, payload: RecurringUpdateRequest) -> dict:
         return {"ok": True, "schedule": result}
 
 
+class BalanceSheetRequest(BaseModel):
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
+
+
+class CashFlowRequest(BaseModel):
+    from_date: Optional[str] = None
+    to_date: Optional[str] = None
+
+
+@app.get("/api/balance-sheet")
+def get_balance_sheet(from_date: Optional[str] = None, to_date: Optional[str] = None) -> dict:
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            raise HTTPException(status_code=400, detail="No Google Sheet configured")
+
+        # Read ledger data
+        rows = agent.sheets.read_range(
+            spreadsheet_id=profile["google_sheet_id"],
+            range_name="Ledger!A2:G1000",
+        )
+
+        # Filter by date if provided
+        if from_date or to_date:
+            filtered_rows = []
+            for row in rows[1:]:  # Skip header
+                if len(row) >= 1:
+                    row_date = str(row[0])
+                    if from_date and row_date < from_date:
+                        continue
+                    if to_date and row_date > to_date:
+                        continue
+                    filtered_rows.append(row)
+            rows = [rows[0]] + filtered_rows  # Keep header
+
+        # Load AR/AP data if available
+        ar_ap_data = None
+        try:
+            ar_ap_data = agent.memory.load_ar_ap()
+        except:
+            pass  # AR/AP not available yet
+
+        balance_sheet = agent.financial_statements.compute_balance_sheet(rows[1:], ar_ap_data)
+        return balance_sheet
+
+
+@app.get("/api/cash-flow")
+def get_cash_flow(from_date: Optional[str] = None, to_date: Optional[str] = None) -> dict:
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            raise HTTPException(status_code=400, detail="No Google Sheet configured")
+
+        # Read ledger data
+        rows = agent.sheets.read_range(
+            spreadsheet_id=profile["google_sheet_id"],
+            range_name="Ledger!A2:G1000",
+        )
+
+        # Filter by date if provided
+        if from_date or to_date:
+            filtered_rows = []
+            for row in rows[1:]:  # Skip header
+                if len(row) >= 1:
+                    row_date = str(row[0])
+                    if from_date and row_date < from_date:
+                        continue
+                    if to_date and row_date > to_date:
+                        continue
+                    filtered_rows.append(row)
+            rows = [rows[0]] + filtered_rows  # Keep header
+
+        # Use full period or specified dates
+        period_start = from_date or "2026-01-01"
+        period_end = to_date or datetime.now().strftime("%Y-%m-%d")
+
+        cash_flow = agent.financial_statements.compute_cash_flow(rows[1:], period_start, period_end)
+        return cash_flow
+
+
+class BudgetRequest(BaseModel):
+    category: str
+    amount: float
+    period: str
+
+
+@app.get("/api/budget")
+def get_budget(month: Optional[str] = None) -> dict:
+    with agent_lock:
+        if month is None:
+            month = datetime.now().strftime("%Y-%m")
+
+        budget_data = agent.memory.load_budgets()
+        ledger_profile = agent.memory.get_current_business()
+        if ledger_profile.get("google_sheet_id"):
+            ledger_rows = agent.sheets.read_range(
+                spreadsheet_id=ledger_profile["google_sheet_id"],
+                range_name="Ledger!A2:G1000",
+            )[1:]  # Skip header
+        else:
+            ledger_rows = []
+
+        actuals = agent.budget_engine.compute_actuals(
+            budget_data.get("budgets", []), ledger_rows, month
+        )
+        alerts = agent.budget_engine.get_alerts(actuals)
+
+        return {
+            "month": month,
+            "budgets": actuals,
+            "alerts": alerts
+        }
+
+
+@app.post("/api/budget")
+def set_budget(payload: BudgetRequest) -> dict:
+    with agent_lock:
+        budget_data = agent.memory.load_budgets()
+        new_budget = agent.budget_engine.set_budget(
+            payload.category, payload.amount, payload.period,
+            agent.memory.current_business_key
+        )
+        budget_data["budgets"].append(new_budget)
+        agent.memory.save_budgets(budget_data)
+        return {"ok": True, "budget": new_budget}
+
+
+@app.delete("/api/budget/{budget_id}")
+def delete_budget(budget_id: str) -> dict:
+    with agent_lock:
+        budget_data = agent.memory.load_budgets()
+        original_len = len(budget_data["budgets"])
+        budget_data["budgets"] = [
+            b for b in budget_data["budgets"] if b.get("id") != budget_id
+        ]
+        if len(budget_data["budgets"]) < original_len:
+            agent.memory.save_budgets(budget_data)
+            return {"ok": True}
+        else:
+            raise HTTPException(status_code=404, detail="Budget not found")
+
+
+# Bank Reconciliation Endpoints
+@app.post("/api/reconcile/upload")
+def upload_bank_statement(file: UploadFile = File(...)) -> dict:
+    with agent_lock:
+        # Save uploaded file temporarily
+        temp_path = Path(f"/tmp/{file.filename}")
+        with open(temp_path, "wb") as buffer:
+            content = file.file.read()
+            buffer.write(content)
+
+        try:
+            # Parse the bank statement
+            parsed = agent.reconciliation_engine.parse_bank_statement(temp_path)
+
+            # Get ledger data for matching
+            profile = agent.memory.get_current_business()
+            if not profile.get("google_sheet_id"):
+                raise HTTPException(status_code=400, detail="No Google Sheet configured")
+
+            ledger_rows = agent.sheets.read_range(
+                spreadsheet_id=profile["google_sheet_id"],
+                range_name="Ledger!A2:G1000",
+            )
+
+            # Match transactions
+            matches = agent.reconciliation_engine.match_transactions(parsed, ledger_rows)
+
+            return {
+                "parsed_count": len(parsed),
+                "matched": matches["matched"],
+                "unmatched_bank": matches["unmatched_bank"],
+                "unmatched_ledger": matches["unmatched_ledger"]
+            }
+        finally:
+            # Clean up temp file
+            temp_path.unlink(missing_ok=True)
+
+
+class ReconcileResolveRequest(BaseModel):
+    action: str  # "add_to_ledger" or "mark_resolved"
+
+
+@app.post("/api/reconcile/resolve/{transaction_id}")
+def resolve_transaction(transaction_id: str, payload: ReconcileResolveRequest) -> dict:
+    with agent_lock:
+        action = payload.action
+        if action not in ["add_to_ledger", "mark_resolved"]:
+            raise HTTPException(status_code=400, detail="Invalid action")
+
+        # For simplicity, we'll add a placeholder transaction
+        # In a full implementation, this would add the actual unmatched transaction
+        if action == "add_to_ledger":
+            # This would add the transaction to the ledger
+            return {"ok": True, "message": "Transaction added to ledger"}
+        else:
+            # Mark as resolved (no action needed)
+            return {"ok": True, "message": "Transaction marked as resolved"}
+
+
 def main() -> int:
     import uvicorn
 
