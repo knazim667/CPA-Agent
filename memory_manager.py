@@ -267,3 +267,18 @@ class MemoryManager:
         path = self._recurring_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _budgets_path(self) -> Path:
+        return self.long_term_dir / self.current_business_key / "budgets.json"
+
+    def load_budgets(self) -> dict[str, Any]:
+        path = self._budgets_path()
+        if not path.exists():
+            return {"budgets": []}
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def save_budgets(self, data: dict[str, Any]) -> None:
+        path = self._budgets_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
