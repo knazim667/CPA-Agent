@@ -239,6 +239,298 @@
           ]
         ]
       }
+    },
+    {
+      "timestamp": 1777306373.2020469,
+      "business": "Business_A",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "04/23/2026",
+          "Corporate filing",
+          "Legal & Professional Fees",
+          "$143.00",
+          "Expense",
+          "N/A",
+          "Paid LLC filing fees"
+        ],
+        [
+          "04/23/2026",
+          "Hostinger website hosting",
+          "Software",
+          "$95.78",
+          "Expense",
+          "N/A",
+          "Website hosting for content site"
+        ],
+        [
+          "04/12/2026",
+          "Claude AI subscription",
+          "Software",
+          "$21.25",
+          "Expense",
+          "N/A",
+          "Monthly AI subscription for content creation"
+        ],
+        [
+          "04/21/2026",
+          "Heygen API cost",
+          "Software",
+          "$10.62",
+          "Expense",
+          "N/A",
+          "API usage for video generation"
+        ],
+        [
+          "04/20/2026",
+          "Blotato.com",
+          "Software",
+          "$29.00",
+          "Expense",
+          "N/A",
+          "Subscription for content planning tool"
+        ],
+        [
+          "04/20/2026",
+          "Heygen API cost (second)",
+          "Software",
+          "$10.62",
+          "Expense",
+          "N/A",
+          "Additional API usage on same date"
+        ],
+        [
+          "04/15/2026",
+          "Google Ads advertising",
+          "Advertising",
+          "$10.00",
+          "Expense",
+          "N/A",
+          "Pay-per-click ad campaign"
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1aryPX5AQIHzwPsO4tcHI_AinyXzlzSGAqy0HB8FudzQ",
+        "updatedRange": "Ledger!A5:G11",
+        "updatedRows": 7,
+        "updatedColumns": 7,
+        "updatedCells": 49
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A5:G11",
+        "values": [
+          [
+            "04/23/2026",
+            "Corporate filing",
+            "Legal & Professional Fees",
+            "$143.00",
+            "Expense",
+            "N/A",
+            "Paid LLC filing fees"
+          ],
+          [
+            "04/23/2026",
+            "Hostinger website hosting",
+            "Software",
+            "$95.78",
+            "Expense",
+            "N/A",
+            "Website hosting for content site"
+          ],
+          [
+            "04/12/2026",
+            "Claude AI subscription",
+            "Software",
+            "$21.25",
+            "Expense",
+            "N/A",
+            "Monthly AI subscription for content creation"
+          ],
+          [
+            "04/21/2026",
+            "Heygen API cost",
+            "Software",
+            "$10.62",
+            "Expense",
+            "N/A",
+            "API usage for video generation"
+          ],
+          [
+            "04/20/2026",
+            "Blotato.com",
+            "Software",
+            "$29.00",
+            "Expense",
+            "N/A",
+            "Subscription for content planning tool"
+          ],
+          [
+            "04/20/2026",
+            "Heygen API cost (second)",
+            "Software",
+            "$10.62",
+            "Expense",
+            "N/A",
+            "Additional API usage on same date"
+          ],
+          [
+            "04/15/2026",
+            "Google Ads advertising",
+            "Advertising",
+            "$10.00",
+            "Expense",
+            "N/A",
+            "Pay-per-click ad campaign"
+          ]
+        ]
+      }
+    },
+    {
+      "timestamp": 1777306621.530207,
+      "business": "Business_A",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "04/23/2026",
+          "Corporate filing",
+          "Legal & Professional Fees",
+          "$143.00",
+          "Expense",
+          "N/A",
+          "Paid LLC filing fees"
+        ],
+        [
+          "04/23/2026",
+          "Hostinger website hosting",
+          "Internet/Hosting",
+          "$95.78",
+          "Expense",
+          "N/A",
+          "Website hosting for content site"
+        ],
+        [
+          "04/12/2026",
+          "Claude AI subscription",
+          "Software",
+          "$21.25",
+          "Expense",
+          "N/A",
+          "Monthly AI subscription for content creation"
+        ],
+        [
+          "04/21/2026",
+          "Heygen API cost",
+          "Software",
+          "$10.62",
+          "Expense",
+          "N/A",
+          "API usage for video generation"
+        ],
+        [
+          "04/20/2026",
+          "Blotato.com",
+          "Software",
+          "$29.00",
+          "Expense",
+          "N/A",
+          "Subscription for content planning tool"
+        ],
+        [
+          "04/20/2026",
+          "Heygen API cost (second)",
+          "Software",
+          "$10.62",
+          "Expense",
+          "N/A",
+          "Additional API usage on same date"
+        ],
+        [
+          "04/15/2026",
+          "Google Ads advertising",
+          "Advertising",
+          "$10.00",
+          "Expense",
+          "N/A",
+          "Pay-per-click ad campaign"
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1aryPX5AQIHzwPsO4tcHI_AinyXzlzSGAqy0HB8FudzQ",
+        "updatedRange": "Ledger!A12:G18",
+        "updatedRows": 7,
+        "updatedColumns": 7,
+        "updatedCells": 49
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A12:G18",
+        "values": [
+          [
+            "04/23/2026",
+            "Corporate filing",
+            "Legal & Professional Fees",
+            "$143.00",
+            "Expense",
+            "N/A",
+            "Paid LLC filing fees"
+          ],
+          [
+            "04/23/2026",
+            "Hostinger website hosting",
+            "Internet/Hosting",
+            "$95.78",
+            "Expense",
+            "N/A",
+            "Website hosting for content site"
+          ],
+          [
+            "04/12/2026",
+            "Claude AI subscription",
+            "Software",
+            "$21.25",
+            "Expense",
+            "N/A",
+            "Monthly AI subscription for content creation"
+          ],
+          [
+            "04/21/2026",
+            "Heygen API cost",
+            "Software",
+            "$10.62",
+            "Expense",
+            "N/A",
+            "API usage for video generation"
+          ],
+          [
+            "04/20/2026",
+            "Blotato.com",
+            "Software",
+            "$29.00",
+            "Expense",
+            "N/A",
+            "Subscription for content planning tool"
+          ],
+          [
+            "04/20/2026",
+            "Heygen API cost (second)",
+            "Software",
+            "$10.62",
+            "Expense",
+            "N/A",
+            "Additional API usage on same date"
+          ],
+          [
+            "04/15/2026",
+            "Google Ads advertising",
+            "Advertising",
+            "$10.00",
+            "Expense",
+            "N/A",
+            "Pay-per-click ad campaign"
+          ]
+        ]
+      }
     }
   ]
 }

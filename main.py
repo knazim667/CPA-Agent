@@ -1306,6 +1306,14 @@ class CPAAgent:
             return {"list": True}
         return None
 
+    def detect_reconcile_command(self, user_input: str) -> dict | None:
+        import re as _re
+        lower = user_input.lower()
+        # "reconcile bank statement" or "upload bank statement for reconciliation"
+        if "reconcile" in lower and ("bank" in lower or "statement" in lower or "csv" in lower):
+            return {"action": "reconcile"}
+        return None
+
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
         import calendar as _cal
         from datetime import date as _date
@@ -1377,6 +1385,14 @@ class CPAAgent:
             self._save_recurring()
             return {
                 "message": f"Recurring set — {schedule['description']} · ${schedule['amount']:.2f} · {schedule['entry_type']} · {schedule['frequency']} from {schedule['next_date']}.",
+                "status": self.get_status(),
+                "presentation": None,
+            }
+
+        reconcile_cmd = self.detect_reconcile_command(user_input)
+        if reconcile_cmd:
+            return {
+                "message": "Please use the Reconcile tab in the UI to upload and match bank statements.",
                 "status": self.get_status(),
                 "presentation": None,
             }
