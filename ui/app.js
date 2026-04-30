@@ -809,6 +809,7 @@ function updateStatus(status) {
   // Recent lists
   renderRecentTransactions(dash.recent_transactions || []);
   renderRecentAudits(dash.recent_audits || []);
+  renderTaxAlerts(status.tax_alerts || []);
 
   // Conversation
   if (status.conversation) {
