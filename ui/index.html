@@ -318,6 +318,12 @@
             </div>
           </div>
 
+          <!-- Tax Alerts card (populated by renderTaxAlerts in app.js) -->
+          <div id="tax-alerts-dashboard" class="hidden" style="margin-top:1.5rem;">
+            <h3 style="margin:0 0 0.75rem 0;font-size:0.9rem;font-weight:600;color:#374151;">Upcoming Tax Deadlines</h3>
+            <div class="tax-alerts-list"></div>
+          </div>
+
         </section>
 
         <!-- Ledger tab -->
@@ -661,7 +667,129 @@
           </div>
         </section>
 
-        <!-- Chat tab -->
+        <!-- AR/AP tab -->
+        <section id="tab-ar-ap" class="tab-content hidden">
+          <h2>Accounts Receivable & Payable</h2>
+          <div class="report-controls">
+            <div style="display:flex;gap:0.75rem;align-items:center;flex-wrap:wrap">
+              <div class="form-field">
+                <label for="ar-ap-type">Type</label>
+                <select id="ar-ap-type">
+                  <option value="receivable">Receivable</option>
+                  <option value="payable">Payable</option>
+                </select>
+              </div>
+              <div class="form-field">
+                <label for="ar-ap-client-vendor">Client/Vendor</label>
+                <input id="ar-ap-client-vendor" type="text" placeholder="Client or vendor name" />
+              </div>
+              <div class="form-field">
+                <label for="ar-ap-amount">Amount ($)</label>
+                <input id="ar-ap-amount" type="number" step="0.01" min="0" placeholder="100.00" />
+              </div>
+              <div class="form-field">
+                <label for="ar-ap-due-date">Due Date</label>
+                <input id="ar-ap-due-date" type="date" />
+              </div>
+              <div class="form-field">
+                <label for="ar-ap-notes">Notes</label>
+                <input id="ar-ap-notes" type="text" placeholder="Optional notes" />
+              </div>
+              <button type="submit" id="ar-ap-add-btn">+ Add Entry</button>
+            </div>
+          </div>
+          <div id="ar-ap-output" class="hidden">
+            <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="ar-ap-receivables-count">—</div>
+                <div style="font-size:0.78rem;color:#64748b">Receivables</div>
+              </div>
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="ar-ap-payables-count">—</div>
+                <div style="font-size:0.78rem;color:#64748b">Payables</div>
+              </div>
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="ar-ap-overdue-count">—</div>
+                <div style="font-size:0.78rem;color:#64748b">Overdue</div>
+              </div>
+            </div>
+            <h3 style="margin-bottom:0.5rem">Accounts Receivable</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Client</th>
+                  <th>Amount</th>
+                  <th>Due Date</th>
+                  <th>Status</th>
+                  <th>Days Outstanding</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="ar-ap-receivables-body"></tbody>
+            </table>
+            <h3 style="margin-bottom:0.5rem">Accounts Payable</h3>
+            <table class="data-table">
+              <thead>
+                <tr>
+                  <th>Vendor</th>
+                  <th>Amount</th>
+                  <th>Due Date</th>
+                  <th>Status</th>
+                  <th>Days Outstanding</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="ar-ap-payables-body"></tbody>
+            </table>
+          </div>
+        </section>
+
+        <!-- Tax tab -->
+        <section id="tab-tax" class="tab-content hidden">
+          <h2>Tax Estimates & Deadlines</h2>
+          <div class="report-controls">
+            <label for="tax-year">Tax Year</label>
+            <input id="tax-year" type="number" min="2020" max="2030" placeholder="2026" />
+            <button type="submit" id="tax-generate-btn">Generate Report</button>
+          </div>
+          <div id="tax-output" class="hidden">
+            <div style="display:flex;gap:1rem;margin-bottom:1rem;flex-wrap:wrap">
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="tax-net-income">—</div>
+                <div style="font-size:0.78rem;color:#64748b">Net Income</div>
+              </div>
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="tax-se-tax">—</div>
+                <div style="font-size:0.78rem;color:#64748b">SE Tax</div>
+              </div>
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="tax-federal-tax">—</div>
+                <div style="font-size:0.78rem;color:#64748b">Federal Tax</div>
+              </div>
+              <div class="panel" style="flex:1;min-width:160px;text-align:center">
+                <div class="metric-value" id="tax-total-tax">—</div>
+                <div style="font-size:0.78rem;color:#64748b">Total Tax</div>
+              </div>
+            </div>
+
+            <!-- Quarterly Estimate Card -->
+            <div class="panel" style="margin-bottom:1rem;">
+              <h3 style="margin-top:0">Quarterly Tax Estimate</h3>
+              <div id="tax-quarterly-info" style="font-size:0.9rem;color:#374151;line-height:1.6;">
+                <em>Click "Generate Report" to load estimate.</em>
+              </div>
+            </div>
+
+            <!-- IRS Deadline Calendar -->
+            <div class="panel">
+              <h3 style="margin-top:0">IRS Deadlines</h3>
+              <div id="tax-deadlines-list" style="font-size:0.9rem;">
+                <em>Click "Generate Report" to load deadlines.</em>
+              </div>
+            </div>
+          </div>
+
+                    <!-- Chat tab -->
         <section id="tab-chat" class="tab-content hidden">
 
           <div class="chat-shell">
