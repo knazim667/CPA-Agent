@@ -91,7 +91,7 @@ def test_mark_paid():
     # Mock the file operations
     test_entry = {
         "id": "test-id",
-        "client": "Test Client",
+        "client_vendor": "Test Client",
         "amount": 1000.00,
         "due_date": "2026-05-30",
         "issue_date": "2026-05-01",
@@ -165,7 +165,7 @@ def test_get_overdue_items():
         "receivables": [
             {
                 "id": "1",
-                "client": "Overdue Client",
+                "client_vendor": "Overdue Client",
                 "amount": 1000.00,
                 "due_date": yesterday,  # Yesterday - overdue
                 "issue_date": "2026-04-01",
@@ -175,7 +175,7 @@ def test_get_overdue_items():
             },
             {
                 "id": "2",
-                "client": "Current Client",
+                "client_vendor": "Current Client",
                 "amount": 500.00,
                 "due_date": (date.today() + timedelta(days=30)).isoformat(),  # Future - not overdue
                 "issue_date": "2026-05-01",
@@ -203,7 +203,7 @@ def test_get_overdue_items():
 
         assert len(result["receivables"]) == 1
         assert len(result["payables"]) == 1
-        assert result["receivables"][0]["client"] == "Overdue Client"
+        assert result["receivables"][0]["client_vendor"] == "Overdue Client"
         assert result["payables"][0]["client_vendor"] == "Overdue Vendor"
 
 
