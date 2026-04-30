@@ -878,7 +878,7 @@ function renderRecentAudits(items) {
 }
 
 /* ----------------------------------------------------------
-   Tax Alerts (populated from status poll tax_alerts field)
+   11. Tax Alerts (populated from status poll tax_alerts field)
    ---------------------------------------------------------- */
 
 function renderTaxAlerts(alerts) {
@@ -896,7 +896,7 @@ function renderTaxAlerts(alerts) {
   list.textContent = '';
 
   alerts.forEach(function (alert) {
-    var daysUntil = alert.days_until;
+    var daysUntil = alert.days_until != null ? alert.days_until : Infinity;
     var badgeColor = daysUntil <= 7 ? '#dc2626' : daysUntil <= 14 ? '#f59e0b' : '#6b7280';
 
     var item = document.createElement('div');
@@ -940,7 +940,7 @@ function renderTaxAlerts(alerts) {
 }
 
 /* ----------------------------------------------------------
-   11. Render conversation
+   12. Render conversation
    ---------------------------------------------------------- */
 
 function renderConversation(conversation, pres) {
@@ -956,7 +956,7 @@ function renderConversation(conversation, pres) {
 }
 
 /* ----------------------------------------------------------
-   12. Append a single message
+   13. Append a single message
    ---------------------------------------------------------- */
 
 function appendMessage(role, text, presentation) {
@@ -982,7 +982,7 @@ function appendMessage(role, text, presentation) {
 }
 
 /* ----------------------------------------------------------
-   13. Render presentation block
+   14. Render presentation block
    ---------------------------------------------------------- */
 
 function renderPresentation(p) {
