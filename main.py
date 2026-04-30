@@ -24,6 +24,8 @@ from skills.recurring_engine import RecurringEngine
 from skills.financial_statements import FinancialStatements
 from skills.budget_engine import BudgetEngine
 from skills.reconciliation_engine import ReconciliationEngine
+from skills.ar_ap_engine import ARAPEngine
+from skills.tax_engine import TaxEngine
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -61,6 +63,8 @@ class CPAAgent:
         self.financial_statements = FinancialStatements()
         self.budget_engine = BudgetEngine()
         self.reconciliation_engine = ReconciliationEngine()
+        self.ar_ap_engine = ARAPEngine(self.memory)
+        self.tax_engine = TaxEngine(self.memory)
         if not self.categorization._rules:
             try:
                 profile = self.memory.get_current_business()
@@ -1314,6 +1318,63 @@ class CPAAgent:
             return {"action": "reconcile"}
         return None
 
+    def detect_ar_ap_command(self, user_input: str) -> dict | None:
+        import re as _re
+        lower = user_input.lower()
+        # "add receivable", "add invoice", "money owed to me"
+        if ("add" in lower or "create" in lower or "new" in lower) and ("receivable" in lower or "invoice" in lower or "bill" in lower or "owed" in lower):
+            # Try to extract amount and description
+            amount_match = _re.search(r'\$?([\d,]+\.?\d*)', user_input)
+            amount = float(amount_match.group(1).replace(',', '')) if amount_match else None
+
+            # Try to extract client/vendor name
+            # Look for patterns like "from ClientName" or "for ClientName" or "to ClientName"
+            client_vendor = None
+            for_pattern = _re.search(r'(?:from|for|to)\s+([A-Za-z0-9\s&]+?)(?:\s+\$|$)', lower)
+            if for_pattern:
+                client_vendor = for_pattern.group(1).strip().title()
+
+            return {
+                "action": "add_receivable" if "receivable" in lower or "invoice" in lower or "owed" in lower else "add_payable",
+                "amount": amount,
+                "client_vendor": client_vendor
+            }
+
+        # "mark paid", "payment received", "paid invoice"
+        if ("mark" in lower or "payment" in lower or "paid" in lower) and ("receivable" in lower or "invoice" in lower or "payable" in lower or "bill" in lower):
+            entry_type = "receivable" if "receivable" in lower or "invoice" in lower else "payable"
+            return {
+                "action": "mark_paid",
+                "entry_type": entry_type
+            }
+
+        # "show receivables", "list payables", "ar ap", "accounts receivable"
+        if ("show" in lower or "list" in lower or "get" in lower) and ("receivable" in lower or "payable" in lower or "ar" in lower or "ap" in lower or "accounts" in lower):
+            return {"action": "list_ar_ap"}
+
+        # "overdue", "late payments"
+        if "overdue" in lower or "late" in lower:
+            return {"action": "get_overdue"}
+
+        return None
+
+    def detect_tax_command(self, user_input: str) -> dict | None:
+        import re as _re
+        lower = user_input.lower()
+        # "tax estimate", "calculate tax", "what do i owe"
+        if ("tax" in lower or "owe" in lower) and ("estimate" in lower or "calculate" in lower or "owe" in lower or "payment" in lower):
+            return {"action": "get_tax_estimate"}
+
+        # "tax deadline", "irs deadline", "when is tax due"
+        if ("deadline" in lower or "due" in lower) and ("tax" in lower or "irs" in lower):
+            return {"action": "get_tax_deadlines"}
+
+        # "tax alert", "upcoming tax", "tax reminder"
+        if ("alert" in lower or "reminder" in lower or "upcoming" in lower) and "tax" in lower:
+            return {"action": "get_tax_alerts"}
+
+        return None
+
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
         import calendar as _cal
         from datetime import date as _date
@@ -1396,6 +1457,170 @@ class CPAAgent:
                 "status": self.get_status(),
                 "presentation": None,
             }
+
+        ar_ap_cmd = self.detect_ar_ap_command(user_input)
+        if ar_ap_cmd:
+            action = ar_ap_cmd.get("action")
+            if action == "add_receivable":
+                amount = ar_ap_cmd.get("amount")
+                client_vendor = ar_ap_cmd.get("client_vendor")
+                if amount is None or client_vendor is None:
+                    return {
+                        "message": "I need both an amount and a client name to create a receivable. Please specify like: 'Add receivable $500 from ClientName'",
+                        "status": self.get_status(),
+                        "presentation": None,
+                    }
+                # Use categorization engine to suggest category, or default to Accounts Receivable
+                cat = self.categorization.suggest_category(client_vendor) if client_vendor else None
+                category = cat["category"] if cat else "Accounts Receivable"
+                # Default due date to 30 days from now
+                from datetime import date, timedelta
+                due_date = (date.today() + timedelta(days=30)).isoformat()
+                result = self.ar_ap_engine.add_receivable(
+                    client=client_vendor,
+                    amount=amount,
+                    due_date=due_date,
+                    notes=f"Created via voice command: {user_input}"
+                )
+                return {
+                    "message": f"Created receivable for {client_vendor}: ${amount:.2f} due {due_date}",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            elif action == "add_payable":
+                amount = ar_ap_cmd.get("amount")
+                client_vendor = ar_ap_cmd.get("client_vendor")
+                if amount is None or client_vendor is None:
+                    return {
+                        "message": "I need both an amount and a vendor name to create a payable. Please specify like: 'Add payable $300 for VendorName'",
+                        "status": self.get_status(),
+                        "presentation": None,
+                    }
+                # Use categorization engine to suggest category, or default to Accounts Payable
+                cat = self.categorization.suggest_category(client_vendor) if client_vendor else None
+                category = cat["category"] if cat else "Accounts Payable"
+                # Default due date to 30 days from now
+                from datetime import date, timedelta
+                due_date = (date.today() + timedelta(days=30)).isoformat()
+                result = self.ar_ap_engine.add_payable(
+                    vendor=client_vendor,
+                    amount=amount,
+                    due_date=due_date,
+                    notes=f"Created via voice command: {user_input}"
+                )
+                return {
+                    "message": f"Created payable for {client_vendor}: ${amount:.2f} due {due_date}",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            elif action == "mark_paid":
+                from datetime import date as _date_cls
+                entry_type = ar_ap_cmd.get("entry_type", "receivable")
+                data = self.ar_ap_engine.get_ar_ap()
+                collection = "receivables" if entry_type == "receivable" else "payables"
+                open_entries = [e for e in data[collection] if e["status"] == "open"]
+                if not open_entries:
+                    return {
+                        "message": f"No open {entry_type} entries found to mark as paid.",
+                        "status": self.get_status(),
+                        "presentation": None,
+                    }
+                latest_entry = max(open_entries, key=lambda x: x["issue_date"])
+                paid_date = _date_cls.today().isoformat()
+                self.ar_ap_engine.mark_paid(
+                    entry_id=latest_entry["id"],
+                    entry_type=entry_type,
+                    paid_date=paid_date,
+                )
+                description = (
+                    f"Invoice paid: {latest_entry['client_vendor']}"
+                    if entry_type == "receivable"
+                    else f"Bill paid: {latest_entry['client_vendor']}"
+                )
+                self.record_structured_transaction(
+                    date=paid_date,
+                    description=description,
+                    category="Accounts Receivable" if entry_type == "receivable" else "Accounts Payable",
+                    amount=latest_entry["amount"],
+                    entry_type="Income" if entry_type == "receivable" else "Expense",
+                    notes=latest_entry.get("notes", ""),
+                )
+                return {
+                    "message": f"Marked {entry_type} '{latest_entry['client_vendor']}' as paid and posted to ledger.",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            elif action == "list_ar_ap":
+                data = self.ar_ap_engine.get_ar_ap()
+                receivables_count = len(data["receivables"])
+                payables_count = len(data["payables"])
+                overdue_receivables = len([r for r in data["receivables"] if r["days_outstanding"] > 0 and r["status"] == "open"])
+                overdue_payables = len([p for p in data["payables"] if p["days_outstanding"] > 0 and p["status"] == "open"])
+                return {
+                    "message": f"AR/AP Summary: {receivables_count} receivables ({overdue_receivables} overdue), {payables_count} payables ({overdue_payables} overdue)",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            elif action == "get_overdue":
+                overdue = self.ar_ap_engine.get_overdue_items()
+                receivables_count = len(overdue["receivables"])
+                payables_count = len(overdue["payables"])
+                if receivables_count == 0 and payables_count == 0:
+                    return {
+                        "message": "No overdue receivables or payables.",
+                        "status": self.get_status(),
+                        "presentation": None,
+                    }
+                msg_parts = []
+                if receivables_count > 0:
+                    msg_parts.append(f"{receivables_count} overdue receivable(s)")
+                if payables_count > 0:
+                    msg_parts.append(f"{payables_count} overdue payable(s)")
+                return {
+                    "message": f"Overdue items: {', '.join(msg_parts)}",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+
+        tax_cmd = self.detect_tax_command(user_input)
+        if tax_cmd:
+            action = tax_cmd.get("action")
+            if action == "get_tax_estimate":
+                # Get net income from ledger
+                ledger_rows = self.sheets.read_range(
+                    spreadsheet_id=self.memory.get_current_business()["google_sheet_id"],
+                    range_name="Ledger!A:G"
+                )
+                tax_summary = self.tax_engine.compute_tax_summary(ledger_rows)
+                return {
+                    "message": f"Tax Estimate: Net Income ${tax_summary['net_income']:.2f}, SE Tax ${tax_summary['se_tax']:.2f}, Federal Tax ${tax_summary['federal_tax']:.2f}, Total Tax ${tax_summary['total_tax']:.2f}",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            elif action == "get_tax_deadlines":
+                from datetime import date
+                current_year = date.today().year
+                deadlines = self.tax_engine.get_irs_deadlines(current_year)
+                deadline_strs = [f"{d['description']}: {d['deadline']}" for d in deadlines]
+                return {
+                    "message": f"Tax Deadlines: {', '.join(deadline_strs)}",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            elif action == "get_tax_alerts":
+                alerts = self.tax_engine.get_upcoming_alerts()
+                if not alerts:
+                    return {
+                        "message": "No upcoming tax deadlines in the next 30 days.",
+                        "status": self.get_status(),
+                        "presentation": None,
+                    }
+                alert_strs = [f"{a['description']}: {a['deadline']} ({a['days_until']} days)" for a in alerts]
+                return {
+                    "message": f"Upcoming Tax Alerts: {', '.join(alert_strs)}",
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
 
         message = self.handle_command(user_input)
         status = self.get_status()
