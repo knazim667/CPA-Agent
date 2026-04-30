@@ -784,11 +784,18 @@ class CPAAgent:
 
         short_term = self.memory.load_short_term_context()
         current = self.memory.get_current_business()
+        raw_conv = short_term.get("conversation", [])
+        conversation = []
+        for entry in raw_conv:
+            if entry.get("user_input"):
+                conversation.append({"role": "user", "content": entry["user_input"]})
+            if entry.get("outcome", {}).get("message"):
+                conversation.append({"role": "agent", "content": entry["outcome"]["message"]})
         return {
             "active_business_key": self.memory.current_business_key,
             "active_business": current,
             "businesses": self.list_businesses(),
-            "conversation": short_term.get("conversation", []),
+            "conversation": conversation,
             "workspace_boot_error": self.workspace_boot_error,
             "input_mode": self.input_mode,
             "model_config": self.get_model_status(),
