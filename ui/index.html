@@ -163,9 +163,8 @@
       .doc-upload button[type="submit"]:hover { background: #1e40af; }
       #document-drafts { display: flex; flex-direction: column; gap: 0.75rem; }
 
-      /* Chat — fill exact available height so the input form is always in view */
-      #tab-chat { height: calc(100vh - 52px - 3rem); display: flex; flex-direction: column; overflow: hidden; }
-      .chat-shell { display: flex; flex-direction: column; flex: 1; min-height: 0; }
+      /* Chat */
+      .chat-shell { display: flex; flex-direction: column; height: calc(100vh - 200px); }
       .chat-controls { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 0; }
       .chat-controls button { padding: 0.4rem 1rem; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
       .chat-controls button:hover { background: #f3f4f6; }
