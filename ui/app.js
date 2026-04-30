@@ -878,6 +878,68 @@ function renderRecentAudits(items) {
 }
 
 /* ----------------------------------------------------------
+   Tax Alerts (populated from status poll tax_alerts field)
+   ---------------------------------------------------------- */
+
+function renderTaxAlerts(alerts) {
+  var container = document.getElementById('tax-alerts-dashboard');
+  if (!container) { return; }
+
+  if (!alerts || !alerts.length) {
+    container.classList.add('hidden');
+    return;
+  }
+
+  container.classList.remove('hidden');
+  var list = container.querySelector('.tax-alerts-list');
+  if (!list) { return; }
+  list.textContent = '';
+
+  alerts.forEach(function (alert) {
+    var daysUntil = alert.days_until;
+    var badgeColor = daysUntil <= 7 ? '#dc2626' : daysUntil <= 14 ? '#f59e0b' : '#6b7280';
+
+    var item = document.createElement('div');
+    item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
+      'padding:0.5rem 0;border-bottom:1px solid #e5e7eb;';
+
+    // Left column: quarter label, description, deadline date
+    var left = document.createElement('div');
+    var strong = document.createElement('strong');
+    strong.textContent = alert.quarter || '';
+    var descText = document.createTextNode(': ' + (alert.description || ''));
+    var br = document.createElement('br');
+    var dateSpan = document.createElement('span');
+    dateSpan.style.cssText = 'font-size:0.75rem;color:#6b7280;';
+    dateSpan.textContent = alert.deadline || '';
+    left.appendChild(strong);
+    left.appendChild(descText);
+    left.appendChild(br);
+    left.appendChild(dateSpan);
+
+    // Right column: days-remaining badge
+    var badge = document.createElement('span');
+    badge.style.cssText = 'background:' + badgeColor + ';color:#fff;padding:0.2rem 0.5rem;' +
+      'border-radius:4px;font-size:0.7rem;font-weight:600;white-space:nowrap;';
+    badge.textContent = 'Due in ' + daysUntil + ' days';
+
+    item.appendChild(left);
+    item.appendChild(badge);
+    list.appendChild(item);
+
+    // Toast for high-urgency alerts (<=7 days), once per session per deadline
+    if (daysUntil <= 7 && !seenAlertDeadlines.has(alert.deadline)) {
+      showToast(
+        'Tax alert: ' + (alert.description || '') + ' due in ' + daysUntil +
+          ' days (' + (alert.deadline || '') + ')',
+        'warning'
+      );
+      seenAlertDeadlines.add(alert.deadline);
+    }
+  });
+}
+
+/* ----------------------------------------------------------
    11. Render conversation
    ---------------------------------------------------------- */
 
