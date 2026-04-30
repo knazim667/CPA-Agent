@@ -60,7 +60,7 @@ setInterval(fetchStatus, 5000)
 ### Dashboard card
 
 - Positioned below the recent audits section in the Dashboard tab
-- Hidden (`display:none` / CSS `hidden` class) when `alerts` is empty
+- Hidden via `classList.add('hidden')` when `alerts` is empty (consistent with all other UI panels)
 - Each row shows: quarter label, description, deadline date, days-remaining badge
 - Badge color coding (consistent with the Tax tab's existing `renderTax()` function):
   - **Red** — `days_until <= 7`

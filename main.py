@@ -794,6 +794,7 @@ class CPAAgent:
             "model_config": self.get_model_status(),
             "dashboard": self.get_dashboard_snapshot(),
             "learned_source_count": len(self.memory.load_learned_sources().get("entries", [])),
+            "tax_alerts": self.tax_engine.get_upcoming_alerts(),
         }
 
     def get_model_status(self) -> dict[str, str]:
