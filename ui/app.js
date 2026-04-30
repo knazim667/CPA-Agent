@@ -359,6 +359,18 @@ function renderArAp(data) {
   if (overdueCountEl) overdueCountEl.textContent = totalOverdue;
   if (arApOutput) arApOutput.classList.remove('hidden');
 
+  // Dashboard summary cards
+  var openReceivables = receivables.filter(function (r) { return r.status === 'open'; });
+  var openArTotal = openReceivables.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
+  var overdueArCount = receivables.filter(function (r) { return r.days_outstanding > 0 && r.status === 'open'; }).length;
+  var upcomingApCount = payables.filter(function (p) { return p.days_outstanding >= -7 && p.days_outstanding <= 0 && p.status === 'open'; }).length;
+  var dashArOpenTotal = document.getElementById('dash-ar-open-total');
+  var dashArOverdue = document.getElementById('dash-ar-overdue');
+  var dashApUpcoming = document.getElementById('dash-ap-upcoming');
+  if (dashArOpenTotal) { dashArOpenTotal.textContent = '$' + openArTotal.toFixed(2); dashArOpenTotal.classList.remove('skeleton'); }
+  if (dashArOverdue) { dashArOverdue.textContent = overdueArCount; dashArOverdue.classList.remove('skeleton'); }
+  if (dashApUpcoming) { dashApUpcoming.textContent = upcomingApCount; dashApUpcoming.classList.remove('skeleton'); }
+
   // Render receivables
   if (!receivables.length) {
     var tr = document.createElement('tr');
@@ -682,6 +694,7 @@ function initTabs() {
       if (tab === 'balance-sheet') { fetchBalanceSheet(); }
       if (tab === 'cash-flow') { fetchCashFlow(); }
       if (tab === 'budget') { fetchBudget(); }
+      if (tab === 'dashboard') { fetchArAp(); }
       if (tab === 'ar-ap') { fetchArAp(); }
       if (tab === 'reconcile') { /* upload handled via form */ }
       if (tab === 'tax') { fetchTax(); }
@@ -1818,5 +1831,6 @@ document.addEventListener('DOMContentLoaded', function () {
   /* Initial data load + live 5-second poll */
   fetchStatus();
   fetchRecurring();
+  fetchArAp();
   setInterval(fetchStatus, 5000);
 });
