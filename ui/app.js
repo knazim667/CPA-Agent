@@ -318,6 +318,251 @@ function initBudget() {
 }
 
 /* ----------------------------------------------------------
+   AR/AP
+   ---------------------------------------------------------- */
+
+function fetchArAp() {
+  fetch('/api/ar-ap')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        showToast('AR/AP error: ' + (data.detail || 'Unknown error'), 'error');
+        return;
+      }
+      renderArAp(data.data);
+    })
+    .catch(function (err) { showToast('AR/AP error: ' + err, 'error'); });
+}
+
+function renderArAp(data) {
+  var receivablesBody = document.getElementById('ar-ap-receivables-body');
+  var payablesBody = document.getElementById('ar-ap-payables-body');
+  var receivablesCountEl = document.getElementById('ar-ap-receivables-count');
+  var payablesCountEl = document.getElementById('ar-ap-payables-count');
+  var overdueCountEl = document.getElementById('ar-ap-overdue-count');
+  var arApOutput = document.getElementById('ar-ap-output');
+
+  if (!receivablesBody || !payablesBody) { return; }
+
+  receivablesBody.textContent = '';
+  payablesBody.textContent = '';
+
+  var receivables = data.receivables || [];
+  var payables = data.payables || [];
+  var overdueReceivables = receivables.filter(r => r.days_outstanding > 0 && r.status === 'open');
+  var overduePayables = payables.filter(p => p.days_outstanding > 0 && p.status === 'open');
+  var totalOverdue = overdueReceivables.length + overduePayables.length;
+
+  if (receivablesCountEl) receivablesCountEl.textContent = receivables.length;
+  if (payablesCountEl) payablesCountEl.textContent = payables.length;
+  if (overdueCountEl) overdueCountEl.textContent = totalOverdue;
+  if (arApOutput) arApOutput.classList.remove('hidden');
+
+  // Render receivables
+  if (!receivables.length) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6;
+    td.style.color = '#6b7280';
+    td.style.padding = '1rem';
+    td.textContent = 'No receivables';
+    tr.appendChild(td);
+    receivablesBody.appendChild(tr);
+  } else {
+    receivables.forEach(function (r) {
+      var tr = document.createElement('tr');
+      [
+        r.client_vendor || '',
+        '$' + Number(r.amount || 0).toFixed(2),
+        r.due_date || '',
+        r.status || '',
+        r.days_outstanding !== undefined ? r.days_outstanding : ''
+      ].forEach(function (val) {
+        var td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+
+      // Actions
+      var actionsTd = document.createElement('td');
+      if (r.status === 'open') {
+        var markPaidBtn = document.createElement('button');
+        markPaidBtn.textContent = 'Mark Paid';
+        markPaidBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
+        markPaidBtn.addEventListener('click', function () {
+          // In a real implementation, we would call the API to mark as paid
+          showToast('Mark as paid functionality would be implemented here', 'info');
+        });
+        actionsTd.appendChild(markPaidBtn);
+      }
+      tr.appendChild(actionsTd);
+      receivablesBody.appendChild(tr);
+    });
+  }
+
+  // Render payables
+  if (!payables.length) {
+    var tr = document.createElement('tr');
+    var td = document.createElement('td');
+    td.colSpan = 6;
+    td.style.color = '#6b7280';
+    td.style.padding = '1rem';
+    td.textContent = 'No payables';
+    tr.appendChild(td);
+    payablesBody.appendChild(tr);
+  } else {
+    payables.forEach(function (p) {
+      var tr = document.createElement('tr');
+      [
+        p.client_vendor || '',
+        '$' + Number(p.amount || 0).toFixed(2),
+        p.due_date || '',
+        p.status || '',
+        p.days_outstanding !== undefined ? p.days_outstanding : ''
+      ].forEach(function (val) {
+        var td = document.createElement('td');
+        td.textContent = val;
+        tr.appendChild(td);
+      });
+
+      // Actions
+      var actionsTd = document.createElement('td');
+      if (p.status === 'open') {
+        var markPaidBtn = document.createElement('button');
+        markPaidBtn.textContent = 'Mark Paid';
+        markPaidBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
+        markPaidBtn.addEventListener('click', function () {
+          // In a real implementation, we would call the API to mark as paid
+          showToast('Mark as paid functionality would be implemented here', 'info');
+        });
+        actionsTd.appendChild(markPaidBtn);
+      }
+      tr.appendChild(actionsTd);
+      payablesBody.appendChild(tr);
+    });
+  }
+}
+
+/* ----------------------------------------------------------
+   Tax
+   ---------------------------------------------------------- */
+
+function fetchTax() {
+  var yearInput = document.getElementById('tax-year');
+  var year = yearInput && yearInput.value ? parseInt(yearInput.value) : new Date().getFullYear();
+
+  fetch('/api/tax?year=' + year)
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      if (!data.ok) {
+        showToast('Tax error: ' + (data.detail || 'Unknown error'), 'error');
+        return;
+      }
+      renderTax(data);
+    })
+    .catch(function (err) { showToast('Tax error: ' + err, 'error'); });
+}
+
+function renderTax(data) {
+  var netIncomeEl = document.getElementById('tax-net-income');
+  var seTaxEl = document.getElementById('tax-se-tax');
+  var federalTaxEl = document.getElementById('tax-federal-tax');
+  var totalTaxEl = document.getElementById('tax-total-tax');
+  var taxOutput = document.getElementById('tax-output');
+
+  if (!netIncomeEl || !seTaxEl || !federalTaxEl || !totalTaxEl) { return; }
+
+  var summary = data.tax_summary || {};
+  var quarterly = data.quarterly_estimate || {};
+  var deadlines = data.irs_deadlines || [];
+  var alerts = data.upcoming_alerts || [];
+
+  if (netIncomeEl) netIncomeEl.textContent = '$' + Number(summary.net_income || 0).toFixed(2);
+  if (seTaxEl) seTaxEl.textContent = '$' + Number(summary.se_tax || 0).toFixed(2);
+  if (federalTaxEl) federalTaxEl.textContent = '$' + Number(summary.federal_tax || 0).toFixed(2);
+  if (totalTaxEl) totalTaxEl.textContent = '$' + Number(summary.total_tax || 0).toFixed(2);
+  if (taxOutput) taxOutput.classList.remove('hidden');
+
+  // In a full implementation, we would render the quarterly estimate, deadlines, and alerts
+  // For now, we'll just show the basic tax summary
+}
+
+/* ----------------------------------------------------------
+   Add event listeners for AR/AP and Tax buttons
+   ---------------------------------------------------------- */
+
+function initArAp() {
+  var addBtn = document.getElementById('ar-ap-add-btn');
+  if (addBtn) {
+    addBtn.addEventListener('click', function (e) {
+      e.preventDefault();
+      var typeSelect = document.getElementById('ar-ap-type');
+      var clientVendorInput = document.getElementById('ar-ap-client-vendor');
+      var amountInput = document.getElementById('ar-ap-amount');
+      var dueDateInput = document.getElementById('ar-ap-due-date');
+      var notesInput = document.getElementById('ar-ap-notes');
+
+      var type = typeSelect ? typeSelect.value : 'receivable';
+      var clientVendor = clientVendorInput ? clientVendorInput.value.trim() : '';
+      var amount = amountInput ? parseFloat(amountInput.value) : null;
+      var dueDate = dueDateInput ? dueDateInput.value : '';
+      var notes = notesInput ? notesInput.value : '';
+
+      if (!clientVendor) {
+        showToast('Client/Vendor name is required', 'error');
+        return;
+      }
+      if (amount === null || isNaN(amount) || amount <= 0) {
+        showToast('Valid amount is required', 'error');
+        return;
+      }
+      if (!dueDate) {
+        showToast('Due date is required', 'error');
+        return;
+      }
+
+      // Call API to create AR/AP entry
+      fetch('/api/ar-ap', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          type: type,
+          client_vendor: clientVendor,
+          amount: amount,
+          due_date: dueDate,
+          notes: notes
+        })
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (data) {
+          if (data.ok) {
+            showToast('Entry added successfully', 'success');
+            // Clear form
+            clientVendorInput.value = '';
+            amountInput.value = '';
+            dueDateInput.value = '';
+            notesInput.value = '';
+            // Refresh the AR/AP list
+            fetchArAp();
+          } else {
+            showToast('Failed to add entry: ' + (data.detail || 'Unknown error'), 'error');
+          }
+        })
+        .catch(function (err) { showToast('Error adding entry: ' + err, 'error'); });
+    });
+  }
+}
+
+function initTax() {
+  var generateBtn = document.getElementById('tax-generate-btn');
+  if (generateBtn) {
+    generateBtn.addEventListener('click', function () {
+      fetchTax();
+    });
+  }
+}
+
+/* ----------------------------------------------------------
    6. Tab routing
    ---------------------------------------------------------- */
 
@@ -1406,6 +1651,8 @@ document.addEventListener('DOMContentLoaded', function () {
   initDocuments();
   initChat();
   initReconcile();
+  initArAp();
+  initTax();
   configureVoice();
 
   /* Initial data load + live 5-second poll */
