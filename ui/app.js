@@ -55,6 +55,7 @@ var speakReplies = false;
 var recognition = null;
 var isListening = false;
 var latestPresentation = null;
+var seenAlertDeadlines = new Set();
 
 /* ----------------------------------------------------------
    4. DOM element references (populated after DOMContentLoaded)
@@ -390,8 +391,26 @@ function renderArAp(data) {
         markPaidBtn.textContent = 'Mark Paid';
         markPaidBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
         markPaidBtn.addEventListener('click', function () {
-          // In a real implementation, we would call the API to mark as paid
-          showToast('Mark as paid functionality would be implemented here', 'info');
+          // Call API to mark as paid
+          fetch('/api/ar-ap/' + r.id + '/mark-paid', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'receivable',
+              paid_date: new Date().toISOString().slice(0, 10)
+            })
+          })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                showToast('Entry marked as paid', 'success');
+                // Refresh the AR/AP list
+                fetchArAp();
+              } else {
+                showToast('Failed to mark as paid: ' + (data.detail || 'Unknown error'), 'error');
+              }
+            })
+            .catch(function (err) { showToast('Error marking as paid: ' + err, 'error'); });
         });
         actionsTd.appendChild(markPaidBtn);
       }
@@ -432,8 +451,26 @@ function renderArAp(data) {
         markPaidBtn.textContent = 'Mark Paid';
         markPaidBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
         markPaidBtn.addEventListener('click', function () {
-          // In a real implementation, we would call the API to mark as paid
-          showToast('Mark as paid functionality would be implemented here', 'info');
+          // Call API to mark as paid
+          fetch('/api/ar-ap/' + p.id + '/mark-paid', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              type: 'payable',
+              paid_date: new Date().toISOString().slice(0, 10)
+            })
+          })
+            .then(function (response) { return response.json(); })
+            .then(function (data) {
+              if (data.ok) {
+                showToast('Entry marked as paid', 'success');
+                // Refresh the AR/AP list
+                fetchArAp();
+              } else {
+                showToast('Failed to mark as paid: ' + (data.detail || 'Unknown error'), 'error');
+              }
+            })
+            .catch(function (err) { showToast('Error marking as paid: ' + err, 'error'); });
         });
         actionsTd.appendChild(markPaidBtn);
       }
@@ -469,6 +506,8 @@ function renderTax(data) {
   var federalTaxEl = document.getElementById('tax-federal-tax');
   var totalTaxEl = document.getElementById('tax-total-tax');
   var taxOutput = document.getElementById('tax-output');
+  var quarterlyInfoEl = document.getElementById('tax-quarterly-info');
+  var deadlinesListEl = document.getElementById('tax-deadlines-list');
 
   if (!netIncomeEl || !seTaxEl || !federalTaxEl || !totalTaxEl) { return; }
 
@@ -483,8 +522,66 @@ function renderTax(data) {
   if (totalTaxEl) totalTaxEl.textContent = '$' + Number(summary.total_tax || 0).toFixed(2);
   if (taxOutput) taxOutput.classList.remove('hidden');
 
-  // In a full implementation, we would render the quarterly estimate, deadlines, and alerts
-  // For now, we'll just show the basic tax summary
+  // Render Quarterly Estimate Card
+  if (quarterlyInfoEl && quarterly.quarter) {
+    var qHtml = '';
+    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>YTD Net Income:</strong> $' + Number(summary.net_income || 0).toFixed(2) + '</p>';
+    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>SE Tax:</strong> $' + Number(quarterly.se_tax || 0).toFixed(2);
+    qHtml += ' <span style="font-size:0.75rem;color:#64748b;">(15.3% of 92.35% of net income)</span></p>';
+    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>Federal Tax:</strong> $' + Number(quarterly.federal_tax || 0).toFixed(2) + '</p>';
+    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>Total Estimated Tax:</strong> $' + Number(quarterly.total || 0).toFixed(2) + '</p>';
+    qHtml += '<p style="margin:0.5rem 0 0 0"><strong>Next Payment (' + quarterly.quarter + '):</strong> ' + (quarterly.due_date || '') + '</p>';
+    qHtml += '<p style="margin:0 0 0;font-size:0.8rem;color:#64748b;">Estimated quarterly payment: $' + Number(quarterly.total / 4 || 0).toFixed(2) + '</p>';
+    quarterlyInfoEl.innerHTML = qHtml;
+  }
+
+  // Render IRS Deadline Calendar
+  if (deadlinesListEl) {
+    deadlinesListEl.textContent = '';
+    if (!deadlines.length) {
+      deadlinesListEl.innerHTML = '<em>No deadlines found.</em>';
+      return;
+    }
+
+    // Build a set of upcoming alert deadlines for highlighting
+    var alertDates = {};
+    alerts.forEach(function (a) { alertDates[a.deadline] = a.days_until; });
+
+    var today = new Date();
+
+    deadlines.forEach(function (dl) {
+      var dlDate = new Date(dl.deadline + 'T00:00:00');
+      var isOverdue = dlDate < today;
+      var isUpcoming = alertDates[dl.deadline] !== undefined;
+
+      // Determine badge color
+      var badgeColor, badgeText;
+      if (isOverdue) {
+        badgeColor = '#ef4444'; // Red
+        badgeText = 'Overdue';
+      } else if (isUpcoming) {
+        badgeColor = '#3b82f6'; // Blue
+        badgeText = 'Due in ' + alertDates[dl.deadline] + ' days';
+      } else {
+        badgeColor = '#6b7280'; // Grey
+        badgeText = 'Future';
+      }
+
+      var item = document.createElement('div');
+      item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid #e5e7eb;';
+
+      var left = document.createElement('div');
+      left.innerHTML = '<strong>' + esc(dl.quarter || '') + '</strong>: ' + esc(dl.description || '') + '<br><span style="font-size:0.75rem;color:#6b7280;">' + esc(dl.deadline || '') + '</span>';
+
+      var badge = document.createElement('span');
+      badge.style.cssText = 'background:' + badgeColor + ';color:#fff;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.7rem;font-weight:600;';
+      badge.textContent = badgeText;
+
+      item.appendChild(left);
+      item.appendChild(badge);
+      deadlinesListEl.appendChild(item);
+    });
+  }
 }
 
 /* ----------------------------------------------------------
