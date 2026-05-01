@@ -196,16 +196,17 @@ class TaxEngine:
     def compute_tax_summary(self, ledger_rows: List[List]) -> Dict[str, Any]:
         """
         Compute tax summary from ledger rows
-        Expected ledger format: [date, description, category, entry_type, amount, ...]
+        Expected ledger format: [Date, Description, Category, Amount, Type, Reference, Notes]
+        Indices: 0=Date, 1=Description, 2=Category, 3=Amount, 4=Type
         """
         total_income = 0.0
         total_expenses = 0.0
 
         for row in ledger_rows:
             if len(row) >= 5:
-                entry_type = row[3] if row[3] else ""
+                entry_type = str(row[4]).strip() if row[4] else ""  # Type at index 4
                 try:
-                    amount = float(row[4]) if row[4] else 0.0
+                    amount = float(str(row[3]).replace(",", "").replace("$", "")) if row[3] else 0.0  # Amount at index 3
                 except (ValueError, TypeError):
                     amount = 0.0
 

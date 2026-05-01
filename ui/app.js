@@ -828,6 +828,7 @@ function updateStatus(status) {
   renderRecentTransactions(dash.recent_transactions || []);
   renderRecentAudits(dash.recent_audits || []);
   renderTaxAlerts(status.tax_alerts || []);
+  renderArApAlerts(status.overdue_ar_ap || {}, status.upcoming_ar_ap || {});
 
   // Conversation — only render when chat tab is visible
   if (status.conversation) {
@@ -959,6 +960,60 @@ function renderTaxAlerts(alerts) {
       seenAlertDeadlines.add(alert.deadline);
     }
   });
+}
+
+/* ----------------------------------------------------------
+   11b. Render AR/AP proactive alerts on dashboard
+   ---------------------------------------------------------- */
+
+var seenArApAlerts = new Set();
+
+function renderArApAlerts(overdue, upcoming) {
+  var container = document.getElementById('ar-ap-alerts-dashboard');
+  if (!container) { return; }
+
+  var overdueR = (overdue.receivables || []).length;
+  var overdueP = (overdue.payables || []).length;
+  var upcomingP = (upcoming.payables || []).length;
+
+  if (!overdueR && !overdueP && !upcomingP) {
+    container.classList.add('hidden');
+    return;
+  }
+  container.classList.remove('hidden');
+  var list = container.querySelector('.ar-ap-alerts-list');
+  if (!list) { return; }
+  list.textContent = '';
+
+  function addRow(label, count, color) {
+    if (!count) { return; }
+    var item = document.createElement('div');
+    item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
+      'padding:0.4rem 0;border-bottom:1px solid #e5e7eb;';
+    var txt = document.createTextNode(label);
+    var badge = document.createElement('span');
+    badge.style.cssText = 'background:' + color + ';color:#fff;padding:0.2rem 0.5rem;' +
+      'border-radius:4px;font-size:0.7rem;font-weight:600;';
+    badge.textContent = count;
+    item.appendChild(txt);
+    item.appendChild(badge);
+    list.appendChild(item);
+  }
+
+  addRow('Overdue receivables', overdueR, '#dc2626');
+  addRow('Overdue payables', overdueP, '#dc2626');
+  addRow('Payables due within 7 days', upcomingP, '#f59e0b');
+
+  // One-time toast per session for overdue items
+  var alertKey = overdueR + ':' + overdueP;
+  if ((overdueR || overdueP) && !seenArApAlerts.has(alertKey)) {
+    seenArApAlerts.add(alertKey);
+    showToast(
+      'AR/AP alert: ' + (overdueR ? overdueR + ' overdue receivable(s) ' : '') +
+      (overdueP ? overdueP + ' overdue payable(s)' : ''),
+      'warning'
+    );
+  }
 }
 
 /* ----------------------------------------------------------

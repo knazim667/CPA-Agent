@@ -159,11 +159,56 @@ class CPAAgent:
             return cleaned.strip(" ,.")
         return None
 
+    def _build_financial_context(self) -> str:
+        """Build a compact summary of AR/AP and budget state for the LLM prompt."""
+        parts = []
+        try:
+            overdue = self.ar_ap_engine.get_overdue_items()
+            upcoming = self.ar_ap_engine.get_upcoming_due(days_ahead=7)
+            overdue_r = len(overdue.get("receivables", []))
+            overdue_p = len(overdue.get("payables", []))
+            upcoming_p = len(upcoming.get("payables", []))
+            if overdue_r or overdue_p or upcoming_p:
+                parts.append(
+                    f"AR/AP snapshot: {overdue_r} overdue receivable(s), "
+                    f"{overdue_p} overdue payable(s), {upcoming_p} payable(s) due within 7 days."
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        try:
+            budget_data = self.memory.load_budgets()
+            budgets = budget_data.get("budgets", [])
+            if budgets:
+                parts.append(f"Active budgets: {len(budgets)} monthly budget(s) set.")
+        except Exception:  # noqa: BLE001
+            pass
+        return "\n".join(parts)
+
+    def _enrich_with_category(self, user_input: str) -> str:
+        """Prepend a suggested category hint to transaction-like inputs so the LLM doesn't guess blind."""
+        lower = user_input.lower()
+        is_transaction_intent = any(
+            kw in lower for kw in ("record", "add", "log", "post", "expense", "income", "spent", "received", "paid")
+        )
+        if not is_transaction_intent:
+            return user_input
+        try:
+            suggestion = self.categorization.suggest_category(user_input)
+            if suggestion and suggestion.get("confidence", 0) >= 0.6:
+                return (
+                    f"[Suggested category from local rules: {suggestion['category']} "
+                    f"(confidence {suggestion['confidence']:.0%})]\n{user_input}"
+                )
+        except Exception:  # noqa: BLE001
+            pass
+        return user_input
+
     def build_messages(self, user_input: str) -> list[dict[str, str]]:
         self.refresh_rules()
         business = self.memory.get_current_business()
         short_term = self.memory.load_short_term_context()
         learned_context = self._build_learned_context()
+        financial_context = self._build_financial_context()
         custom_rules = json.dumps(self.custom_rules, indent=2)
         business_context = json.dumps(business, indent=2)
         short_term_context = json.dumps(short_term, indent=2)
@@ -176,9 +221,10 @@ class CPAAgent:
             f"{business_context}\n\n"
             "Current short-term context:\n"
             f"{short_term_context}\n\n"
-            "Learned operating knowledge:\n"
-            f"{learned_context}"
         )
+        if financial_context:
+            system_content += f"Current financial alerts:\n{financial_context}\n\n"
+        system_content += f"Learned operating knowledge:\n{learned_context}"
 
         return [
             {"role": "system", "content": system_content},
@@ -781,8 +827,12 @@ class CPAAgent:
                         entry_type=entry["entry_type"],
                         notes="Auto-posted by recurring schedule",
                     )
-                except Exception:  # noqa: BLE001
-                    pass
+                except Exception as exc:  # noqa: BLE001
+                    self.memory.record_skill_outcome(
+                        action_name="recurring_auto_post",
+                        success=False,
+                        details={"error": str(exc), "entry": entry},
+                    )
 
         short_term = self.memory.load_short_term_context()
         current = self.memory.get_current_business()
@@ -793,6 +843,15 @@ class CPAAgent:
                 conversation.append({"role": "user", "content": entry["user_input"]})
             if entry.get("outcome", {}).get("message"):
                 conversation.append({"role": "agent", "content": entry["outcome"]["message"]})
+        # Proactive AR/AP alerts — pure memory, no API cost
+        overdue_ar_ap: dict = {"receivables": [], "payables": []}
+        upcoming_ar_ap: dict = {"receivables": [], "payables": []}
+        try:
+            overdue_ar_ap = self.ar_ap_engine.get_overdue_items()
+            upcoming_ar_ap = self.ar_ap_engine.get_upcoming_due(days_ahead=7)
+        except Exception:  # noqa: BLE001
+            pass
+
         return {
             "active_business_key": self.memory.current_business_key,
             "active_business": current,
@@ -803,7 +862,9 @@ class CPAAgent:
             "model_config": self.get_model_status(),
             "dashboard": self.get_dashboard_snapshot(),
             "learned_source_count": len(self.memory.load_learned_sources().get("entries", [])),
-            "tax_alerts": self.tax_engine.get_upcoming_alerts(),
+            "tax_alerts": self.tax_engine.get_upcoming_alerts(days_ahead=60),
+            "overdue_ar_ap": overdue_ar_ap,
+            "upcoming_ar_ap": upcoming_ar_ap,
         }
 
     def get_model_status(self) -> dict[str, str]:
@@ -1255,7 +1316,7 @@ class CPAAgent:
             self.update_short_term_memory(user_input, {"message": message})
             return message
 
-        plan = self.run_reasoning(user_input)
+        plan = self.run_reasoning(self._enrich_with_category(user_input))
         draft_result = self.execute_action(plan, user_input)
         reflection = self.self_reflect(user_input, draft_result)
 

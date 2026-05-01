@@ -62,7 +62,8 @@ class RecurringEngine:
                 continue
             if s.get("last_posted_date") == today_str:
                 continue
-            if s.get("next_date") == today_str:
+            if s.get("next_date", "") <= today_str:
+                # Use <= so a schedule missed while the server was offline still posts
                 s["last_posted_date"] = today_str
                 s["next_date"] = self._advance_date(today_str, s["frequency"], s["day_of_period"])
                 due.append(dict(s))
