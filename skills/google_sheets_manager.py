@@ -207,6 +207,58 @@ class GoogleSheetsManager:
                 }
         return None
 
+    def get_sheet_id(self, spreadsheet_id: str, sheet_name: str = "Ledger") -> int:
+        """Return the numeric sheetId for the named worksheet."""
+        spreadsheet = self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
+        for sheet in spreadsheet.get("sheets", []):
+            if sheet["properties"]["title"] == sheet_name:
+                return sheet["properties"]["sheetId"]
+        raise ValueError(f"Sheet '{sheet_name}' not found in spreadsheet {spreadsheet_id}")
+
+    def delete_rows(self, spreadsheet_id: str, sheet_id: int, row_indices: list[int]) -> dict[str, Any]:
+        """Delete rows by their 0-based sheet indices. Deletes bottom-to-top to avoid index drift."""
+        requests = [
+            {
+                "deleteDimension": {
+                    "range": {
+                        "sheetId": sheet_id,
+                        "dimension": "ROWS",
+                        "startIndex": idx,
+                        "endIndex": idx + 1,
+                    }
+                }
+            }
+            for idx in sorted(row_indices, reverse=True)
+        ]
+        return self._execute(
+            lambda service: service.spreadsheets().batchUpdate(
+                spreadsheetId=spreadsheet_id,
+                body={"requests": requests},
+            )
+        )
+
+    def find_duplicate_ledger_rows(self, spreadsheet_id: str) -> list[dict]:
+        """Return duplicate ledger rows (all but the first occurrence of each date+amount+type group)."""
+        rows = self.read_range(spreadsheet_id, "Ledger!A2:G1000")
+        seen: dict[tuple, int] = {}
+        duplicates = []
+        for i, row in enumerate(rows):
+            if len(row) < 5:
+                continue
+            key = (str(row[0]).strip(), str(row[3]).strip(), str(row[4]).strip().lower())
+            if key in seen:
+                # 0-based sheet index: header is index 0, data row i is index i+1
+                duplicates.append({
+                    "sheet_row_index": i + 1,
+                    "date": row[0],
+                    "description": row[1] if len(row) > 1 else "",
+                    "amount": row[3],
+                    "type": row[4],
+                })
+            else:
+                seen[key] = i
+        return duplicates
+
     def update_range(
         self,
         spreadsheet_id: str,

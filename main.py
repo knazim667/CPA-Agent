@@ -1383,9 +1383,43 @@ class CPAAgent:
 
         return None
 
+    def detect_delete_command(self, user_input: str) -> dict | None:
+        lower = user_input.lower()
+        duplicate_words = ("duplicate", "duplicates", "dupes", "dupe")
+        delete_words = ("delete", "remove", "clean", "clear", "deduplicate", "dedupe", "fix", "purge")
+        if any(d in lower for d in duplicate_words) and any(w in lower for w in delete_words):
+            return {"action": "delete_duplicates"}
+        if "clean up" in lower and ("ledger" in lower or "transactions" in lower or "entries" in lower):
+            return {"action": "delete_duplicates"}
+        return None
+
+    def delete_duplicate_ledger_rows(self) -> dict[str, Any]:
+        profile = self.memory.get_current_business()
+        spreadsheet_id = profile.get("google_sheet_id")
+        if not spreadsheet_id:
+            return {"ok": False, "message": "No Google Sheet configured for this business."}
+        duplicates = self.sheets.find_duplicate_ledger_rows(spreadsheet_id)
+        if not duplicates:
+            return {"ok": True, "message": "No duplicate transactions found in the ledger. Everything looks clean."}
+        sheet_id = self.sheets.get_sheet_id(spreadsheet_id, "Ledger")
+        indices = [d["sheet_row_index"] for d in duplicates]
+        self.sheets.delete_rows(spreadsheet_id, sheet_id, indices)
+        lines = [f"  • {d['date']} | {d['description']} | {d['type']} ${d['amount']}" for d in duplicates]
+        return {
+            "ok": True,
+            "message": f"Deleted {len(duplicates)} duplicate row(s) from the ledger:\n" + "\n".join(lines),
+        }
+
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
         import calendar as _cal
         from datetime import date as _date
+
+        # Delete duplicates command
+        delete_cmd = self.detect_delete_command(user_input)
+        if delete_cmd and delete_cmd.get("action") == "delete_duplicates":
+            result = self.delete_duplicate_ledger_rows()
+            self.update_short_term_memory(user_input, {"message": result["message"]})
+            return {"message": result["message"], "status": self.get_status(), "presentation": None}
 
         # Budget command check (runs before recurring to avoid false matches)
         budget_cmd = self.detect_budget_command(user_input)
