@@ -531,6 +531,178 @@
           ]
         ]
       }
+    },
+    {
+      "timestamp": 1777646252.6144571,
+      "business": "nazam_llc",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "04/23/2026",
+          "Corporate filing",
+          "Legal & Professional Fees",
+          143,
+          "Expense",
+          "",
+          ""
+        ],
+        [
+          "04/23/2026",
+          "Hostinger website",
+          "Software & Subscriptions",
+          95.78,
+          "Expense",
+          "",
+          ""
+        ],
+        [
+          "04/30/2026",
+          "ChatGPT Codex application",
+          "Software & Subscriptions",
+          21.25,
+          "Expense",
+          "",
+          ""
+        ],
+        [
+          "05/01/2026",
+          "Zoom phone services",
+          "Telecommunications",
+          20.7,
+          "Expense",
+          "",
+          ""
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1sEJBLOokzNdo8u-_DtP-JwDVouZH880g0rRUoqTyNMg",
+        "updatedRange": "Ledger!A2:G5",
+        "updatedRows": 4,
+        "updatedColumns": 7,
+        "updatedCells": 28
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A2:G5",
+        "values": [
+          [
+            "04/23/2026",
+            "Corporate filing",
+            "Legal & Professional Fees",
+            "$143.00",
+            "Expense"
+          ],
+          [
+            "04/23/2026",
+            "Hostinger website",
+            "Software & Subscriptions",
+            "$95.78",
+            "Expense"
+          ],
+          [
+            "04/30/2026",
+            "ChatGPT Codex application",
+            "Software & Subscriptions",
+            "$21.25",
+            "Expense"
+          ],
+          [
+            "05/01/2026",
+            "Zoom phone services",
+            "Telecommunications",
+            "$20.70",
+            "Expense"
+          ]
+        ]
+      }
+    },
+    {
+      "timestamp": 1777646791.5591402,
+      "business": "nazam_llc",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "04/23/2026",
+          "Corporate filing",
+          "Government Fees",
+          "$143.00",
+          "Expense",
+          "",
+          ""
+        ],
+        [
+          "04/23/2026",
+          "Hostinger website",
+          "Software & Subscriptions",
+          "$95.78",
+          "Expense",
+          "",
+          ""
+        ],
+        [
+          "04/30/2026",
+          "ChatGPT Codex application",
+          "Software & Subscriptions",
+          "$21.25",
+          "Expense",
+          "Recurring",
+          "Recurring SaaS Expense"
+        ],
+        [
+          "05/01/2026",
+          "Zoom phone services",
+          "Telecommunications",
+          "$20.70",
+          "Expense",
+          "Recurring",
+          "Recurring Telecom Expense"
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1sEJBLOokzNdo8u-_DtP-JwDVouZH880g0rRUoqTyNMg",
+        "updatedRange": "Ledger!A6:G9",
+        "updatedRows": 4,
+        "updatedColumns": 7,
+        "updatedCells": 28
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A6:G9",
+        "values": [
+          [
+            "04/23/2026",
+            "Corporate filing",
+            "Government Fees",
+            "$143.00",
+            "Expense"
+          ],
+          [
+            "04/23/2026",
+            "Hostinger website",
+            "Software & Subscriptions",
+            "$95.78",
+            "Expense"
+          ],
+          [
+            "04/30/2026",
+            "ChatGPT Codex application",
+            "Software & Subscriptions",
+            "$21.25",
+            "Expense",
+            "Recurring",
+            "Recurring SaaS Expense"
+          ],
+          [
+            "05/01/2026",
+            "Zoom phone services",
+            "Telecommunications",
+            "$20.70",
+            "Expense",
+            "Recurring",
+            "Recurring Telecom Expense"
+          ]
+        ]
+      }
     }
   ]
 }

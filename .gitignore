@@ -21,7 +21,12 @@ memory/short_term.json
 memory/skill_memory.json
 memory/active_business.json
 memory/long_term/*/*.db
+memory/long_term/*/category_rules.json
+memory/long_term/nazam_llc/
 uploads/
+
+# Tool artifacts
+.playwright-mcp/
 
 # Editor and test artifacts
 .pytest_cache/
