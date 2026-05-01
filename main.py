@@ -190,10 +190,12 @@ class CPAAgent:
         return self.extract_action_plan(response_text)
 
     def extract_action_plan(self, response_text: str) -> dict[str, Any]:
+        # Strip markdown code fences (e.g. ```json ... ```) before parsing
+        text = re.sub(r"```(?:json)?\s*", "", response_text).strip().strip("`").strip()
         try:
-            start = response_text.index("{")
-            end = response_text.rindex("}") + 1
-            return json.loads(response_text[start:end])
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            return json.loads(text[start:end])
         except (ValueError, json.JSONDecodeError):
             return {
                 "thought": "Model returned plain text; no tool action extracted.",
@@ -1277,7 +1279,7 @@ class CPAAgent:
                 "reflection": reflection,
             },
         )
-        self.update_short_term_memory(user_input, draft_result)
+        self.update_short_term_memory(user_input, {**draft_result, "message": final_message})
         return self._clean_response_text(final_message)
 
     def detect_recurring_command(self, user_input: str) -> dict | None:

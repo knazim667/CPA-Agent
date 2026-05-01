@@ -698,6 +698,11 @@ function initTabs() {
       if (tab === 'ar-ap') { fetchArAp(); }
       if (tab === 'reconcile') { /* upload handled via form */ }
       if (tab === 'tax') { fetchTax(); }
+      if (tab === 'chat') {
+        // Force a fresh render of chat history when switching to chat tab
+        lastRenderedConvLength = -1;
+        fetchStatus();
+      }
     });
   });
   // Activate dashboard by default
@@ -824,9 +829,12 @@ function updateStatus(status) {
   renderRecentAudits(dash.recent_audits || []);
   renderTaxAlerts(status.tax_alerts || []);
 
-  // Conversation
+  // Conversation — only render when chat tab is visible
   if (status.conversation) {
-    renderConversation(status.conversation, latestPresentation);
+    var chatSection = document.getElementById('tab-chat');
+    if (chatSection && !chatSection.classList.contains('hidden')) {
+      renderConversation(status.conversation, latestPresentation);
+    }
   }
 
   // Provider / mode selects in settings
@@ -957,10 +965,19 @@ function renderTaxAlerts(alerts) {
    12. Render conversation
    ---------------------------------------------------------- */
 
+var lastRenderedConvLength = -1;
+
 function renderConversation(conversation, pres) {
   if (!chatLog) { return; }
+  if (!conversation || !conversation.length) {
+    if (lastRenderedConvLength !== 0) { chatLog.textContent = ''; lastRenderedConvLength = 0; }
+    return;
+  }
+  // Skip full re-render if nothing new — avoids 5-second flicker
+  if (conversation.length === lastRenderedConvLength && !pres) { return; }
+  lastRenderedConvLength = conversation.length;
+
   chatLog.textContent = '';
-  if (!conversation || !conversation.length) { return; }
   for (var i = 0; i < conversation.length; i++) {
     var msg = conversation[i];
     var isLast = (i === conversation.length - 1);
@@ -973,25 +990,88 @@ function renderConversation(conversation, pres) {
    13. Append a single message
    ---------------------------------------------------------- */
 
+function addInlineMarkdown(parent, text) {
+  // Split by markdown tokens using capturing group so tokens appear in result array.
+  var parts = text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/);
+  parts.forEach(function(part) {
+    if (!part) { return; }
+    var el;
+    if (part.slice(0, 2) === '**' && part.slice(-2) === '**' && part.length > 4) {
+      el = document.createElement('strong');
+      el.textContent = part.slice(2, -2);
+    } else if (part.charAt(0) === '*' && part.slice(-1) === '*' && part.length > 2) {
+      el = document.createElement('em');
+      el.textContent = part.slice(1, -1);
+    } else if (part.charAt(0) === '`' && part.slice(-1) === '`' && part.length > 2) {
+      el = document.createElement('code');
+      el.textContent = part.slice(1, -1);
+    } else {
+      el = document.createTextNode(part);
+    }
+    parent.appendChild(el);
+  });
+}
+
+function buildMessageDom(text) {
+  // Renders plain or markdown-like agent text into DOM nodes without innerHTML.
+  var frag = document.createDocumentFragment();
+  if (!text) { return frag; }
+
+  var paras = text.split(/\n{2,}/);
+  paras.forEach(function(para) {
+    para = para.trim();
+    if (!para) { return; }
+
+    var rawLines = para.split('\n');
+    var isAllList = rawLines.every(function(l) { return /^[\-\*] /.test(l); });
+    if (isAllList && rawLines.length > 0) {
+      var ul = document.createElement('ul');
+      rawLines.forEach(function(line) {
+        var li = document.createElement('li');
+        addInlineMarkdown(li, line.replace(/^[\-\*] /, ''));
+        ul.appendChild(li);
+      });
+      frag.appendChild(ul);
+      return;
+    }
+
+    var p = document.createElement('p');
+    rawLines.forEach(function(line, idx) {
+      addInlineMarkdown(p, line);
+      if (idx < rawLines.length - 1) { p.appendChild(document.createElement('br')); }
+    });
+    frag.appendChild(p);
+  });
+  return frag;
+}
+
 function appendMessage(role, text, presentation) {
   if (!chatLog) { return; }
 
-  var div = document.createElement('div');
-  div.className = 'message ' + (role || 'user');
+  var wrap = document.createElement('div');
+  wrap.className = 'message-wrap ' + (role || 'user');
 
-  var textNode = document.createElement('p');
-  textNode.textContent = text || '';
-  div.appendChild(textNode);
+  var bubble = document.createElement('div');
+  bubble.className = 'message ' + (role || 'user');
+
+  if (role === 'agent') {
+    bubble.appendChild(buildMessageDom(text || ''));
+  } else {
+    var textNode = document.createElement('p');
+    textNode.textContent = text || '';
+    bubble.appendChild(textNode);
+  }
+  wrap.appendChild(bubble);
 
   if (role === 'agent' && presentation) {
     var presHtml = renderPresentation(presentation);
     var presWrapper = document.createElement('div');
     // Use insertAdjacentHTML instead of innerHTML to avoid the innerHTML security hook
     presWrapper.insertAdjacentHTML('beforeend', presHtml);
-    div.appendChild(presWrapper);
+    wrap.appendChild(presWrapper);
   }
 
-  chatLog.appendChild(div);
+  chatLog.appendChild(wrap);
   chatLog.scrollTop = chatLog.scrollHeight;
 }
 
