@@ -75,10 +75,15 @@
 
     <!-- Top bar (model badge + settings only) -->
     <header class="top-bar">
-      <span class="brand">CPA-Agent</span>
+      <div class="top-bar-left">
+        <span class="brand">CPA-Agent</span>
+        <span class="top-bar-sep">›</span>
+        <span id="top-bar-section" class="top-bar-section">Dashboard</span>
+      </div>
       <div class="top-bar-right">
         <span id="boot-warning" class="boot-warning hidden">&#9888; Connection issue</span>
         <span id="model-badge" class="model-badge">—</span>
+        <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">&#9790;</button>
         <button id="settings-open" class="icon-btn" aria-label="Settings">&#9881;</button>
       </div>
     </header>
@@ -93,26 +98,28 @@
           <select id="business-select" class="sidebar-biz-select" aria-label="Active business"></select>
         </div>
 
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="dashboard">&#11035; Dashboard</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="dashboard">Dashboard</a>
 
-        <div class="sidebar-group-label">Books</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="ledger">&#128212; Ledger</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="recurring">&#128257; Recurring</a>
+        <div class="sidebar-group-label">BOOKS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="ledger">Ledger</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="recurring">Recurring</a>
 
-        <div class="sidebar-group-label">Reports</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="reports">&#128200; P&amp;L</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="balance-sheet">&#128202; Balance Sheet</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="cash-flow">&#128203; Cash Flow</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="budget">&#128204; Budget</a>
+        <div class="sidebar-group-label">REPORTS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="reports">P&amp;L</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="balance-sheet">Balance Sheet</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="cash-flow">Cash Flow</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="budget">Budget</a>
 
-        <div class="sidebar-group-label">Operations</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="ar-ap">&#128221; AR/AP</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="reconcile">&#128205; Reconcile</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="tax">&#128206; Tax</a>
+        <div class="sidebar-group-label">OPERATIONS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="ar-ap">AR / AP</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="reconcile">Reconcile</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="tax">Tax</a>
 
-        <div class="sidebar-group-label">Tools</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="documents">&#128196; Documents</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="chat">&#128172; Chat</a>
+        <div class="sidebar-group-label">TOOLS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="documents">Documents</a>
+
+        <div class="sidebar-spacer"></div>
+        <button id="settings-open-sidebar" class="sidebar-settings-btn" aria-label="Settings">&#9881; Settings</button>
       </nav>
 
       <!-- Main content -->
