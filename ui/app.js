@@ -695,7 +695,7 @@ function updateContextChip(tab) {
   var label = TAB_LABELS[tab] || tab;
   var now = new Date();
   var month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-  if (chip) { chip.textContent = '\u{1F4C8} Viewing: ' + label + ' · ' + month; }
+  if (chip) { chip.textContent = '📈 Viewing: ' + label + ' · ' + month; }
   if (sectionEl) { sectionEl.textContent = label; }
 }
 
@@ -751,12 +751,13 @@ function initAiPanel() {
   if (clearBtn) {
     clearBtn.addEventListener('click', function () {
       fetch('/api/clear-conversation', { method: 'POST' })
-        .then(function () {
+        .then(function (r) {
+          if (!r.ok) { throw new Error('Server error ' + r.status); }
           if (chatLog) { chatLog.textContent = ''; }
           lastRenderedConvLength = -1;
           showToast('Conversation cleared', 'success');
         })
-        .catch(function (err) { showToast('Clear failed: ' + err, 'error'); });
+        .catch(function (err) { showToast('Clear failed: ' + err.message, 'error'); });
     });
   }
 }
@@ -803,13 +804,13 @@ function initSettings() {
   var panel = document.getElementById('settings-panel');
 
   function openSettings() {
-    backdrop.classList.add('open');
-    panel.classList.add('open');
+    if (backdrop) { backdrop.classList.add('open'); }
+    if (panel) { panel.classList.add('open'); }
   }
 
   function closeSettings() {
-    backdrop.classList.remove('open');
-    panel.classList.remove('open');
+    if (backdrop) { backdrop.classList.remove('open'); }
+    if (panel) { panel.classList.remove('open'); }
   }
 
   if (openBtn) { openBtn.addEventListener('click', openSettings); }
@@ -2030,7 +2031,6 @@ document.addEventListener('DOMContentLoaded', function () {
   /* Init all subsystems */
   initThemeToggle();
   initAiPanel();
-  updateContextChip('dashboard');
   initTabs();
   initSettings();
   initProviderSwitch();
