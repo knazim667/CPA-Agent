@@ -209,10 +209,7 @@ function renderBudget(data) {
     (data.alerts || []).forEach(function (a) {
       var div = document.createElement('div');
       var isDanger = a.level === 'danger';
-      div.style.cssText = 'padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.4rem;font-size:0.82rem;' +
-        (isDanger
-          ? 'background:#fef2f2;color:#dc2626;border:1px solid #fca5a5'
-          : 'background:#fffbeb;color:#92400e;border:1px solid #fde68a');
+      div.className = isDanger ? 'budget-alert-danger' : 'budget-alert-warning';
       var prefix = document.createTextNode((isDanger ? 'Over budget: ' : 'Near limit: ') +
         a.category + ' — ' + a.pct.toFixed(0) + '% used');
       div.appendChild(prefix);
@@ -234,7 +231,6 @@ function renderBudget(data) {
   } else {
     budgets.forEach(function (b) {
       var pct      = Math.min(b.pct, 100);
-      var barColor = b.pct >= 100 ? '#dc2626' : b.pct >= 80 ? '#f59e0b' : '#16a34a';
       var tr = document.createElement('tr');
 
       [b.category, '$' + b.budget.toFixed(2), '$' + b.actual.toFixed(2), '$' + b.remaining.toFixed(2)].forEach(function (val) {
@@ -246,13 +242,15 @@ function renderBudget(data) {
       // Progress bar (DOM only)
       var barTd = document.createElement('td');
       var track = document.createElement('div');
-      track.style.cssText = 'background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden';
+      track.className = 'budget-bar-track';
       var fill = document.createElement('div');
-      fill.style.cssText = 'width:' + pct + '%;background:' + barColor + ';height:8px;border-radius:99px';
+      fill.className = 'budget-bar-fill' + (b.pct >= 100 ? ' over' : b.pct >= 80 ? ' near' : '');
+      fill.style.width = pct + '%';
       track.appendChild(fill);
       barTd.appendChild(track);
       var pctLabel = document.createElement('span');
-      pctLabel.style.cssText = 'font-size:0.72rem;color:#64748b';
+      pctLabel.className = 'muted';
+      pctLabel.style.fontSize = '11px';
       pctLabel.textContent = b.pct.toFixed(0) + '%';
       barTd.appendChild(pctLabel);
       tr.appendChild(barTd);
@@ -1267,7 +1265,7 @@ function renderPresentation(p) {
     }
     // Approve button
     if (p.token) {
-      html += '<button class="approval-button" data-token="' + esc(p.token) + '" style="margin-top:0.75rem;padding:0.5rem 1.25rem;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;">Approve Draft</button>';
+      html += '<button class="approval-button" data-token="' + esc(p.token) + '">Approve Draft</button>';
     }
   }
 
@@ -1804,7 +1802,6 @@ function appendDraftCard(data) {
   if (!documentDrafts) { return; }
   var card = document.createElement('div');
   card.className = 'draft-card';
-  card.style.cssText = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:1rem;';
 
   var title = document.createElement('h4');
   title.textContent = data.filename || 'Document Draft';
@@ -1823,7 +1820,6 @@ function appendDraftCard(data) {
     approveBtn.className = 'approval-button';
     approveBtn.dataset.token = data.token;
     approveBtn.textContent = 'Approve Draft';
-    approveBtn.style.cssText = 'padding:0.5rem 1.25rem;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;';
     card.appendChild(approveBtn);
   }
 
