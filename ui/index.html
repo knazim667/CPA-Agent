@@ -6,194 +6,15 @@
     <title>CPA-Agent</title>
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>🧾</text></svg>" />
     <link rel="stylesheet" href="/ui/styles.css" />
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
-    <style>
-      /* Minimal inline styles to support tabbed layout before styles.css loads tab-specific rules */
-      *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-      body { font-family: 'Inter', sans-serif; background: #f9fafb; color: #111827; }
-
-      /* Toast container */
-      #toast-container {
-        position: fixed;
-        top: 1rem;
-        right: 1rem;
-        z-index: 9999;
-        display: flex;
-        flex-direction: column;
-        gap: 0.5rem;
-        pointer-events: none;
-      }
-
-      /* Settings backdrop */
-      #settings-backdrop {
-        position: fixed;
-        inset: 0;
-        background: rgba(0,0,0,0.4);
-        z-index: 1000;
-        display: none;
-      }
-      #settings-backdrop.open { display: block; }
-
-      /* Settings panel slide-over */
-      #settings-panel {
-        position: fixed;
-        top: 0;
-        right: -360px;
-        width: 360px;
-        height: 100%;
-        background: #fff;
-        z-index: 1001;
-        box-shadow: -4px 0 24px rgba(0,0,0,0.12);
-        transition: right 0.25s ease;
-        overflow-y: auto;
-        padding: 1.5rem;
-        display: flex;
-        flex-direction: column;
-        gap: 1.25rem;
-      }
-      #settings-panel.open { right: 0; }
-
-      .settings-header {
-        display: flex;
-        align-items: center;
-        justify-content: space-between;
-        border-bottom: 1px solid #e5e7eb;
-        padding-bottom: 1rem;
-      }
-      .settings-header h2 { font-size: 1.1rem; font-weight: 600; }
-
-      .settings-section { display: flex; flex-direction: column; gap: 0.5rem; }
-      .settings-section label { font-size: 0.8rem; font-weight: 500; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
-      .settings-section select,
-      .settings-section input { width: 100%; padding: 0.5rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.9rem; }
-      .settings-section button { padding: 0.5rem 1rem; background: #1d4ed8; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; }
-      .settings-section button:hover { background: #1e40af; }
-      .settings-section .info-row { font-size: 0.85rem; color: #374151; }
-      .settings-section a { color: #1d4ed8; text-decoration: none; font-size: 0.85rem; }
-      .settings-section a:hover { text-decoration: underline; }
-
-      /* Top bar */
-      .top-bar {
-        display: flex;
-        align-items: center;
-        gap: 1rem;
-        padding: 0 1.25rem;
-        height: 52px;
-        background: #fff;
-        border-bottom: 1px solid #e5e7eb;
-        position: sticky;
-        top: 0;
-        z-index: 100;
-      }
-      .brand { font-size: 1.1rem; font-weight: 700; color: #1d4ed8; flex-shrink: 0; }
-      .top-bar-right { display: flex; align-items: center; gap: 0.5rem; margin-left: auto; }
-      #model-badge { font-size: 0.75rem; font-weight: 600; background: #dbeafe; color: #1e40af; padding: 0.25rem 0.6rem; border-radius: 999px; flex-shrink: 0; }
-      #boot-warning { font-size: 0.8rem; color: #92400e; background: #fef3c7; border: 1px solid #fcd34d; border-radius: 6px; padding: 0.3rem 0.75rem; }
-      #boot-warning.hidden { display: none; }
-      .icon-btn { background: none; border: none; cursor: pointer; font-size: 1.25rem; padding: 0.25rem 0.5rem; color: #6b7280; border-radius: 6px; }
-      .icon-btn:hover { background: #f3f4f6; color: #111827; }
-      #settings-close { background: none; border: none; cursor: pointer; font-size: 1.25rem; color: #6b7280; padding: 0.2rem; }
-      #settings-close:hover { color: #111827; }
-
-      /* Metric cards */
-      .metrics-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 1rem; margin-bottom: 1.5rem; }
-      .metric-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; display: flex; flex-direction: column; gap: 0.35rem; }
-      .metric-card .metric-label { font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; }
-      .metric-card .metric-value { font-size: 1.6rem; font-weight: 700; color: #111827; }
-      .skeleton { color: #9ca3af; }
-
-      .recent-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-      .recent-section h3 { font-size: 0.9rem; font-weight: 600; margin-bottom: 0.5rem; color: #374151; }
-
-      /* Filter bar */
-      .filter-bar { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1rem; padding: 1rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-      .filter-bar input, .filter-bar button { padding: 0.45rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; }
-      .filter-bar button { background: #1d4ed8; color: #fff; border-color: #1d4ed8; cursor: pointer; font-weight: 500; }
-      .filter-bar button:hover { background: #1e40af; }
-
-      .post-btn-row { margin-bottom: 1rem; }
-      .post-btn-row button { padding: 0.5rem 1.25rem; background: #059669; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-size: 0.9rem; font-weight: 500; }
-      .post-btn-row button:hover { background: #047857; }
-
-      /* Transaction form panel */
-      #transaction-form-panel { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; margin-bottom: 1rem; }
-      #transaction-form-panel.hidden { display: none; }
-      .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
-      .form-field { display: flex; flex-direction: column; gap: 0.3rem; }
-      .form-field.full { grid-column: 1 / -1; }
-      .form-field label { font-size: 0.8rem; font-weight: 500; color: #374151; }
-      .form-field input, .form-field select, .form-field textarea {
-        padding: 0.45rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem;
-        font-family: inherit;
-      }
-      .form-actions { display: flex; gap: 0.75rem; margin-top: 0.75rem; }
-      .form-actions button[type="submit"] { padding: 0.5rem 1.25rem; background: #1d4ed8; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
-      .form-actions button[type="submit"]:hover { background: #1e40af; }
-      .form-actions #cancel-transaction { padding: 0.5rem 1rem; background: #f3f4f6; color: #374151; border: 1px solid #d1d5db; border-radius: 6px; cursor: pointer; font-weight: 500; }
-      .form-actions #cancel-transaction:hover { background: #e5e7eb; }
-
-      /* Ledger table */
-      .table-wrap { overflow-x: auto; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-      table { width: 100%; border-collapse: collapse; font-size: 0.875rem; }
-      th { padding: 0.75rem 1rem; text-align: left; font-size: 0.75rem; font-weight: 600; color: #6b7280; text-transform: uppercase; letter-spacing: 0.05em; border-bottom: 1px solid #e5e7eb; background: #f9fafb; }
-      td { padding: 0.75rem 1rem; border-bottom: 1px solid #f3f4f6; color: #374151; }
-      .pagination { display: flex; align-items: center; gap: 0.75rem; margin-top: 1rem; font-size: 0.875rem; color: #6b7280; }
-      .pagination button { padding: 0.35rem 0.85rem; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; font-size: 0.875rem; }
-      .pagination button:hover { background: #f3f4f6; }
-      .pagination button:disabled { opacity: 0.4; cursor: default; }
-
-      /* Reports */
-      .report-controls { display: flex; flex-wrap: wrap; gap: 0.75rem; align-items: center; margin-bottom: 1.25rem; padding: 1rem; background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; }
-      .report-controls input, .report-controls button { padding: 0.45rem 0.75rem; border: 1px solid #d1d5db; border-radius: 6px; font-size: 0.875rem; }
-      .report-controls button { background: #1d4ed8; color: #fff; border-color: #1d4ed8; cursor: pointer; font-weight: 500; }
-      .report-controls button:hover { background: #1e40af; }
-      #export-csv-btn { background: #059669 !important; border-color: #059669 !important; }
-      #export-csv-btn:hover { background: #047857 !important; }
-      #report-output { display: block; }
-      #report-output.hidden { display: none; }
-      .report-tables { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; }
-      .report-section h3 { font-size: 0.95rem; font-weight: 600; margin-bottom: 0.5rem; color: #374151; }
-      tfoot td { font-weight: 600; background: #f9fafb; border-top: 2px solid #e5e7eb; }
-      #net-profit-row td { font-size: 1rem; font-weight: 700; background: #eff6ff; color: #1d4ed8; }
-
-      /* Documents */
-      .doc-upload { background: #fff; border: 1px solid #e5e7eb; border-radius: 10px; padding: 1.25rem; margin-bottom: 1.25rem; max-width: 560px; }
-      .doc-upload .form-field { margin-bottom: 0.75rem; }
-      .doc-upload button[type="submit"] { padding: 0.5rem 1.25rem; background: #1d4ed8; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; margin-top: 0.5rem; }
-      .doc-upload button[type="submit"]:hover { background: #1e40af; }
-      #document-drafts { display: flex; flex-direction: column; gap: 0.75rem; }
-
-      /* Chat */
-      .chat-shell { display: flex; flex-direction: column; height: calc(100vh - 200px); }
-      .chat-controls { display: flex; align-items: center; gap: 0.75rem; padding: 0.75rem 0; border-bottom: 1px solid #e5e7eb; margin-bottom: 0; }
-      .chat-controls button { padding: 0.4rem 1rem; border: 1px solid #d1d5db; border-radius: 6px; background: #fff; cursor: pointer; font-size: 0.85rem; font-weight: 500; }
-      .chat-controls button:hover { background: #f3f4f6; }
-      #voice-status { font-size: 0.8rem; color: #6b7280; }
-      #chat-log { flex: 1; overflow-y: auto; padding: 1rem 0.5rem; display: flex; flex-direction: column; gap: 0.75rem; }
-      .message { padding: 0.7rem 1rem; border-radius: 14px; max-width: 82%; word-wrap: break-word; line-height: 1.6; }
-      .message.user { background: #1d4ed8; color: #fff; align-self: flex-end; border-bottom-right-radius: 4px; }
-      .message.agent { background: #f3f4f6; color: #1f2937; align-self: flex-start; border-bottom-left-radius: 4px; border: 1px solid #e5e7eb; }
-      .message p { margin: 0 0 0.4rem; }
-      .message p:last-child { margin-bottom: 0; }
-      .message code { font-family: ui-monospace, monospace; background: rgba(0,0,0,0.08); padding: 0.1rem 0.35rem; border-radius: 4px; font-size: 0.82em; }
-      .message.agent strong { font-weight: 600; color: #111827; }
-      .message.agent em { font-style: italic; color: #374151; }
-      .message ul, .message ol { margin: 0.3rem 0 0.3rem 1.2rem; padding: 0; }
-      .message li { margin-bottom: 0.2rem; }
-      .message-label { font-size: 0.7rem; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; color: #9ca3af; margin-bottom: 0.2rem; padding: 0 0.25rem; }
-      .message-label.user-label { text-align: right; }
-      .message-wrap { display: flex; flex-direction: column; }
-      .message-wrap.user { align-items: flex-end; }
-      .message-wrap.agent { align-items: flex-start; }
-      #chat-form { display: flex; flex-direction: column; gap: 0.5rem; border-top: 1px solid #e5e7eb; padding-top: 0.75rem; }
-      #message-input { width: 100%; padding: 0.6rem 0.9rem; border: 1px solid #d1d5db; border-radius: 8px; font-size: 0.9rem; font-family: inherit; resize: vertical; }
-      .chat-submit-row { display: flex; justify-content: flex-end; }
-      .chat-submit-row button { padding: 0.5rem 1.25rem; background: #1d4ed8; color: #fff; border: none; border-radius: 6px; cursor: pointer; font-weight: 500; }
-      .chat-submit-row button:hover { background: #1e40af; }
-
-      /* Utility */
-      .hidden { display: none !important; }
-    </style>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700&family=JetBrains+Mono:wght@400;700&display=swap" rel="stylesheet" />
+    <script>
+      (function () {
+        try {
+          var t = localStorage.getItem('cpa-theme');
+          if (t === 'light') { document.documentElement.setAttribute('data-theme', 'light'); }
+        } catch (_) {}
+      }());
+    </script>
   </head>
   <body>
 
@@ -254,10 +75,15 @@
 
     <!-- Top bar (model badge + settings only) -->
     <header class="top-bar">
-      <span class="brand">CPA-Agent</span>
+      <div class="top-bar-left">
+        <span class="brand">CPA-Agent</span>
+        <span class="top-bar-sep">›</span>
+        <span id="top-bar-section" class="top-bar-section">Dashboard</span>
+      </div>
       <div class="top-bar-right">
         <span id="boot-warning" class="boot-warning hidden">&#9888; Connection issue</span>
         <span id="model-badge" class="model-badge">—</span>
+        <button id="theme-toggle" class="icon-btn" aria-label="Toggle theme">&#9790;</button>
         <button id="settings-open" class="icon-btn" aria-label="Settings">&#9881;</button>
       </div>
     </header>
@@ -272,26 +98,28 @@
           <select id="business-select" class="sidebar-biz-select" aria-label="Active business"></select>
         </div>
 
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="dashboard">&#11035; Dashboard</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="dashboard">Dashboard</a>
 
-        <div class="sidebar-group-label">Books</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="ledger">&#128212; Ledger</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="recurring">&#128257; Recurring</a>
+        <div class="sidebar-group-label">BOOKS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="ledger">Ledger</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="recurring">Recurring</a>
 
-        <div class="sidebar-group-label">Reports</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="reports">&#128200; P&amp;L</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="balance-sheet">&#128202; Balance Sheet</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="cash-flow">&#128203; Cash Flow</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="budget">&#128204; Budget</a>
+        <div class="sidebar-group-label">REPORTS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="reports">P&amp;L</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="balance-sheet">Balance Sheet</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="cash-flow">Cash Flow</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="budget">Budget</a>
 
-        <div class="sidebar-group-label">Operations</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="ar-ap">&#128221; AR/AP</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="reconcile">&#128205; Reconcile</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="tax">&#128206; Tax</a>
+        <div class="sidebar-group-label">OPERATIONS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="ar-ap">AR / AP</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="reconcile">Reconcile</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="tax">Tax</a>
 
-        <div class="sidebar-group-label">Tools</div>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="documents">&#128196; Documents</a>
-        <a class="sidebar-item" href="javascript:void(0)" data-tab="chat">&#128172; Chat</a>
+        <div class="sidebar-group-label">TOOLS</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="documents">Documents</a>
+
+        <div class="sidebar-spacer"></div>
+        <button id="settings-open-sidebar" class="sidebar-settings-btn" aria-label="Settings">&#9881; Settings</button>
       </nav>
 
       <!-- Main content -->
@@ -299,6 +127,7 @@
 
         <!-- Dashboard tab -->
         <section id="tab-dashboard" class="tab-content">
+          <div class="dash-greeting" id="dash-greeting">Welcome back</div>
 
           <div class="metrics-grid">
             <div class="metric-card">
@@ -824,33 +653,39 @@
 
         </section>
 
-        <!-- Chat tab -->
-        <section id="tab-chat" class="tab-content hidden">
-
-          <div class="chat-shell">
-            <div class="chat-controls">
-              <button id="voice-button">Start Voice</button>
-              <span id="voice-status">Browser voice idle</span>
-              <button id="speak-toggle">Voice Replies On</button>
-            </div>
-
-            <div id="chat-log"></div>
-
-            <form id="chat-form">
-              <textarea
-                id="message-input"
-                rows="3"
-                placeholder="Ask CPA-Agent to record a transaction, summarize notes, or switch business context."
-              ></textarea>
-              <div class="chat-submit-row">
-                <button type="submit">Send</button>
-              </div>
-            </form>
-          </div>
-
-        </section>
+        <button id="ai-panel-toggle" class="ai-panel-toggle" aria-label="Toggle AI panel">&#10094; AI</button>
 
       </main>
+
+      <aside id="ai-panel" class="ai-panel" aria-label="AI Co-pilot">
+        <div class="ai-panel-header">
+          <span class="ai-panel-title">AI Co-pilot</span>
+          <div class="ai-panel-header-actions">
+            <button id="ai-voice-btn" class="icon-btn" aria-label="Voice input" title="Voice input">&#127908;</button>
+            <button id="ai-speak-toggle" class="icon-btn" aria-label="Toggle voice replies" title="Voice replies">&#128266;</button>
+            <button id="ai-clear-chat" class="icon-btn" aria-label="Clear chat" title="Clear chat">&#128465;</button>
+          </div>
+        </div>
+
+        <div id="ai-chat-log" class="ai-chat-log"></div>
+
+        <div class="ai-panel-footer">
+          <div id="ai-context-chip" class="ai-context-chip">&#128202; Viewing: Dashboard</div>
+          <form id="ai-chat-form" class="ai-chat-form">
+            <textarea
+              id="ai-message-input"
+              class="ai-message-input"
+              aria-label="Message to AI"
+              autocomplete="off"
+              spellcheck="true"
+              rows="2"
+              placeholder="Ask CPA-Agent anything&#8230;"
+            ></textarea>
+            <button type="submit" class="ai-send-btn" aria-label="Send message">&#8593;</button>
+          </form>
+          <span id="ai-voice-status" class="ai-voice-status" aria-live="polite"></span>
+        </div>
+      </aside>
 
     </div>
 

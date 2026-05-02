@@ -209,10 +209,7 @@ function renderBudget(data) {
     (data.alerts || []).forEach(function (a) {
       var div = document.createElement('div');
       var isDanger = a.level === 'danger';
-      div.style.cssText = 'padding:0.5rem 0.75rem;border-radius:6px;margin-bottom:0.4rem;font-size:0.82rem;' +
-        (isDanger
-          ? 'background:#fef2f2;color:#dc2626;border:1px solid #fca5a5'
-          : 'background:#fffbeb;color:#92400e;border:1px solid #fde68a');
+      div.className = isDanger ? 'budget-alert-danger' : 'budget-alert-warning';
       var prefix = document.createTextNode((isDanger ? 'Over budget: ' : 'Near limit: ') +
         a.category + ' — ' + a.pct.toFixed(0) + '% used');
       div.appendChild(prefix);
@@ -234,7 +231,6 @@ function renderBudget(data) {
   } else {
     budgets.forEach(function (b) {
       var pct      = Math.min(b.pct, 100);
-      var barColor = b.pct >= 100 ? '#dc2626' : b.pct >= 80 ? '#f59e0b' : '#16a34a';
       var tr = document.createElement('tr');
 
       [b.category, '$' + b.budget.toFixed(2), '$' + b.actual.toFixed(2), '$' + b.remaining.toFixed(2)].forEach(function (val) {
@@ -246,13 +242,14 @@ function renderBudget(data) {
       // Progress bar (DOM only)
       var barTd = document.createElement('td');
       var track = document.createElement('div');
-      track.style.cssText = 'background:#e2e8f0;border-radius:99px;height:8px;overflow:hidden';
+      track.className = 'budget-bar-track';
       var fill = document.createElement('div');
-      fill.style.cssText = 'width:' + pct + '%;background:' + barColor + ';height:8px;border-radius:99px';
+      fill.className = 'budget-bar-fill' + (b.pct >= 100 ? ' over' : b.pct >= 80 ? ' near' : '');
+      fill.style.width = pct + '%';
       track.appendChild(fill);
       barTd.appendChild(track);
       var pctLabel = document.createElement('span');
-      pctLabel.style.cssText = 'font-size:0.72rem;color:#64748b';
+      pctLabel.className = 'muted';
       pctLabel.textContent = b.pct.toFixed(0) + '%';
       barTd.appendChild(pctLabel);
       tr.appendChild(barTd);
@@ -566,16 +563,16 @@ function renderTax(data) {
       var isOverdue = dlDate < today;
       var isUpcoming = alertDates[dl.deadline] !== undefined;
 
-      // Determine badge color
-      var badgeColor, badgeText;
+      // Determine badge class
+      var badgeClass, badgeText;
       if (isOverdue) {
-        badgeColor = '#ef4444'; // Red
+        badgeClass = 'badge badge-overdue';
         badgeText = 'Overdue';
       } else if (isUpcoming) {
-        badgeColor = '#3b82f6'; // Blue
+        badgeClass = 'badge badge-pending';
         badgeText = 'Due in ' + alertDates[dl.deadline] + ' days';
       } else {
-        badgeColor = '#6b7280'; // Grey
+        badgeClass = 'badge';
         badgeText = 'Future';
       }
 
@@ -586,7 +583,7 @@ function renderTax(data) {
       left.innerHTML = '<strong>' + esc(dl.quarter || '') + '</strong>: ' + esc(dl.description || '') + '<br><span style="font-size:0.75rem;color:#6b7280;">' + esc(dl.deadline || '') + '</span>';
 
       var badge = document.createElement('span');
-      badge.style.cssText = 'background:' + badgeColor + ';color:#fff;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.7rem;font-weight:600;';
+      badge.className = badgeClass;
       badge.textContent = badgeText;
 
       item.appendChild(left);
@@ -675,6 +672,93 @@ function initTax() {
    6. Tab routing
    ---------------------------------------------------------- */
 
+var TAB_LABELS = {
+  'dashboard':     'Dashboard',
+  'ledger':        'Ledger',
+  'recurring':     'Recurring',
+  'reports':       'P&L Report',
+  'balance-sheet': 'Balance Sheet',
+  'cash-flow':     'Cash Flow',
+  'budget':        'Budget',
+  'ar-ap':         'AR / AP',
+  'reconcile':     'Reconcile',
+  'tax':           'Tax',
+  'documents':     'Documents'
+};
+
+function updateContextChip(tab) {
+  var chip = document.getElementById('ai-context-chip');
+  var sectionEl = document.getElementById('top-bar-section');
+  var label = TAB_LABELS[tab] || tab;
+  var now = new Date();
+  var month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  if (chip) { chip.textContent = '📈 Viewing: ' + label + ' · ' + month; }
+  if (sectionEl) { sectionEl.textContent = label; }
+}
+
+function initThemeToggle() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) { return; }
+
+  function applyTheme(theme) {
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+      btn.textContent = '☀';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      btn.textContent = '☽';
+    }
+    try { localStorage.setItem('cpa-theme', theme); } catch (e) {}
+  }
+
+  var current = 'dark';
+  try { current = localStorage.getItem('cpa-theme') || 'dark'; } catch (e) {}
+  applyTheme(current);
+
+  btn.addEventListener('click', function () {
+    var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+  });
+}
+
+function initAiPanel() {
+  var panel = document.getElementById('ai-panel');
+  var toggleBtn = document.getElementById('ai-panel-toggle');
+  var clearBtn = document.getElementById('ai-clear-chat');
+  var isOpen = true;
+
+  function setPanelState(open) {
+    isOpen = open;
+    if (panel) {
+      panel.style.width = open ? '' : '0';
+      panel.classList.toggle('ai-panel-closed', !open);
+    }
+    if (toggleBtn) {
+      toggleBtn.textContent = open ? '⟨ AI' : 'AI ⟩';
+      toggleBtn.style.right = open ? 'calc(var(--ai-panel-w) + 4px)' : '4px';
+    }
+  }
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function () {
+      setPanelState(!isOpen);
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function () {
+      fetch('/api/clear-conversation', { method: 'POST' })
+        .then(function (r) {
+          if (!r.ok) { throw new Error('Server error ' + r.status); }
+          if (chatLog) { chatLog.textContent = ''; }
+          lastRenderedConvLength = -1;
+          showToast('Conversation cleared', 'success');
+        })
+        .catch(function (err) { showToast('Clear failed: ' + err.message, 'error'); });
+    });
+  }
+}
+
 function initTabs() {
   var items = document.querySelectorAll('.sidebar-item');
   items.forEach(function (item) {
@@ -698,11 +782,7 @@ function initTabs() {
       if (tab === 'ar-ap') { fetchArAp(); }
       if (tab === 'reconcile') { /* upload handled via form */ }
       if (tab === 'tax') { fetchTax(); }
-      if (tab === 'chat') {
-        // Force a fresh render of chat history when switching to chat tab
-        lastRenderedConvLength = -1;
-        fetchStatus();
-      }
+      updateContextChip(tab);
     });
   });
   // Activate dashboard by default
@@ -721,16 +801,18 @@ function initSettings() {
   var panel = document.getElementById('settings-panel');
 
   function openSettings() {
-    backdrop.classList.add('open');
-    panel.classList.add('open');
+    if (backdrop) { backdrop.classList.add('open'); }
+    if (panel) { panel.classList.add('open'); }
   }
 
   function closeSettings() {
-    backdrop.classList.remove('open');
-    panel.classList.remove('open');
+    if (backdrop) { backdrop.classList.remove('open'); }
+    if (panel) { panel.classList.remove('open'); }
   }
 
   if (openBtn) { openBtn.addEventListener('click', openSettings); }
+  var openBtnSidebar = document.getElementById('settings-open-sidebar');
+  if (openBtnSidebar) { openBtnSidebar.addEventListener('click', openSettings); }
   if (closeBtn) { closeBtn.addEventListener('click', closeSettings); }
   if (backdrop) { backdrop.addEventListener('click', closeSettings); }
 
@@ -760,6 +842,13 @@ function updateStatus(status) {
       }
       businessSelect.appendChild(opt);
     });
+  }
+
+  var greetingEl = document.getElementById('dash-greeting');
+  if (greetingEl && status.active_business) {
+    var hour = new Date().getHours();
+    var timeOfDay = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    greetingEl.textContent = timeOfDay + ', ' + status.active_business.business_name;
   }
 
   // Model badge
@@ -830,12 +919,9 @@ function updateStatus(status) {
   renderTaxAlerts(status.tax_alerts || []);
   renderArApAlerts(status.overdue_ar_ap || {}, status.upcoming_ar_ap || {});
 
-  // Conversation — only render when chat tab is visible
+  // AI panel is always visible — render conversation unconditionally
   if (status.conversation) {
-    var chatSection = document.getElementById('tab-chat');
-    if (chatSection && !chatSection.classList.contains('hidden')) {
-      renderConversation(status.conversation, latestPresentation);
-    }
+    renderConversation(status.conversation, latestPresentation);
   }
 
   // Provider / mode selects in settings
@@ -920,7 +1006,7 @@ function renderTaxAlerts(alerts) {
 
   alerts.forEach(function (alert) {
     var daysUntil = alert.days_until != null ? alert.days_until : Infinity;
-    var badgeColor = daysUntil <= 7 ? '#dc2626' : daysUntil <= 14 ? '#f59e0b' : '#6b7280';
+    var badgeClass = daysUntil <= 7 ? 'badge badge-overdue' : daysUntil <= 14 ? 'badge badge-pending' : 'badge';
 
     var item = document.createElement('div');
     item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
@@ -942,8 +1028,7 @@ function renderTaxAlerts(alerts) {
 
     // Right column: days-remaining badge
     var badge = document.createElement('span');
-    badge.style.cssText = 'background:' + badgeColor + ';color:#fff;padding:0.2rem 0.5rem;' +
-      'border-radius:4px;font-size:0.7rem;font-weight:600;white-space:nowrap;';
+    badge.className = badgeClass;
     badge.textContent = 'Due in ' + daysUntil + ' days';
 
     item.appendChild(left);
@@ -985,24 +1070,21 @@ function renderArApAlerts(overdue, upcoming) {
   if (!list) { return; }
   list.textContent = '';
 
-  function addRow(label, count, color) {
+  function addRow(label, count, badgeClass) {
     if (!count) { return; }
     var item = document.createElement('div');
-    item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
-      'padding:0.4rem 0;border-bottom:1px solid #e5e7eb;';
     var txt = document.createTextNode(label);
     var badge = document.createElement('span');
-    badge.style.cssText = 'background:' + color + ';color:#fff;padding:0.2rem 0.5rem;' +
-      'border-radius:4px;font-size:0.7rem;font-weight:600;';
+    badge.className = 'badge ' + badgeClass;
     badge.textContent = count;
     item.appendChild(txt);
     item.appendChild(badge);
     list.appendChild(item);
   }
 
-  addRow('Overdue receivables', overdueR, '#dc2626');
-  addRow('Overdue payables', overdueP, '#dc2626');
-  addRow('Payables due within 7 days', upcomingP, '#f59e0b');
+  addRow('Overdue receivables', overdueR, 'badge-expense');
+  addRow('Overdue payables', overdueP, 'badge-expense');
+  addRow('Payables due within 7 days', upcomingP, 'badge-overdue');
 
   // One-time toast per session for overdue items
   var alertKey = overdueR + ':' + overdueP;
@@ -1185,7 +1267,7 @@ function renderPresentation(p) {
     }
     // Approve button
     if (p.token) {
-      html += '<button class="approval-button" data-token="' + esc(p.token) + '" style="margin-top:0.75rem;padding:0.5rem 1.25rem;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;">Approve Draft</button>';
+      html += '<button class="approval-button" data-token="' + esc(p.token) + '">Approve Draft</button>';
     }
   }
 
@@ -1722,17 +1804,15 @@ function appendDraftCard(data) {
   if (!documentDrafts) { return; }
   var card = document.createElement('div');
   card.className = 'draft-card';
-  card.style.cssText = 'background:#fff;border:1px solid #e5e7eb;border-radius:8px;padding:1rem;';
 
   var title = document.createElement('h4');
   title.textContent = data.filename || 'Document Draft';
-  title.style.marginBottom = '0.5rem';
   card.appendChild(title);
 
   if (data.summary) {
     var summary = document.createElement('p');
+    summary.className = 'draft-card-summary';
     summary.textContent = data.summary;
-    summary.style.cssText = 'font-size:0.875rem;color:#374151;margin-bottom:0.75rem;';
     card.appendChild(summary);
   }
 
@@ -1741,7 +1821,6 @@ function appendDraftCard(data) {
     approveBtn.className = 'approval-button';
     approveBtn.dataset.token = data.token;
     approveBtn.textContent = 'Approve Draft';
-    approveBtn.style.cssText = 'padding:0.5rem 1.25rem;background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-weight:500;';
     card.appendChild(approveBtn);
   }
 
@@ -1885,9 +1964,9 @@ function fetchStatus() {
 
 document.addEventListener('DOMContentLoaded', function () {
   /* Grab DOM references */
-  chatLog              = document.getElementById('chat-log');
-  chatForm             = document.getElementById('chat-form');
-  messageInput         = document.getElementById('message-input');
+  chatLog              = document.getElementById('ai-chat-log');
+  chatForm             = document.getElementById('ai-chat-form');
+  messageInput         = document.getElementById('ai-message-input');
   businessSelect       = document.getElementById('business-select');
   providerSelect       = document.getElementById('provider-select');
   modelModeSelect      = document.getElementById('model-mode-select');
@@ -1939,14 +2018,16 @@ document.addEventListener('DOMContentLoaded', function () {
   netProfitValue       = document.getElementById('net-profit-value');
   netProfitRow         = document.getElementById('net-profit-row');
   documentDrafts       = document.getElementById('document-drafts');
-  voiceButton          = document.getElementById('voice-button');
-  voiceStatus          = document.getElementById('voice-status');
-  speakToggle          = document.getElementById('speak-toggle');
+  voiceButton          = document.getElementById('ai-voice-btn');
+  voiceStatus          = document.getElementById('ai-voice-status');
+  speakToggle          = document.getElementById('ai-speak-toggle');
 
   /* Set default date for transaction form */
   if (txDate) { txDate.value = new Date().toISOString().slice(0, 10); }
 
   /* Init all subsystems */
+  initThemeToggle();
+  initAiPanel();
   initTabs();
   initSettings();
   initProviderSwitch();
