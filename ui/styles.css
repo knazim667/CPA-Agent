@@ -7,9 +7,9 @@
   --bg:             #0C0E14;
   --surface:        #131620;
   --surface-raised: #1A1D2E;
-  --border:         #252840;
+  --border:         #2E3258;
   --text:           #E8EAFF;
-  --muted:          #5C6080;
+  --muted:          #8B94C1;
   --accent:         #818CF8;
   --accent-hover:   #A5B4FC;
   --accent-subtle:  rgba(129,140,248,0.1);
@@ -55,7 +55,7 @@
 
 /* ── 3. Reset & Base ──────────────────────────────────────── */
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-button { cursor: pointer; font: inherit; border: none; border-radius: var(--radius-sm); padding: 8px 16px; transition: all 150ms; }
+button { cursor: pointer; font: inherit; border: none; border-radius: var(--radius-sm); padding: 8px 16px; transition: all 150ms; color: var(--text); }
 
 body {
   font-family: var(--font);
