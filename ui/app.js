@@ -250,7 +250,6 @@ function renderBudget(data) {
       barTd.appendChild(track);
       var pctLabel = document.createElement('span');
       pctLabel.className = 'muted';
-      pctLabel.style.fontSize = '11px';
       pctLabel.textContent = b.pct.toFixed(0) + '%';
       barTd.appendChild(pctLabel);
       tr.appendChild(barTd);
@@ -1801,13 +1800,12 @@ function appendDraftCard(data) {
 
   var title = document.createElement('h4');
   title.textContent = data.filename || 'Document Draft';
-  title.style.marginBottom = '0.5rem';
   card.appendChild(title);
 
   if (data.summary) {
     var summary = document.createElement('p');
+    summary.className = 'draft-card-summary';
     summary.textContent = data.summary;
-    summary.style.cssText = 'font-size:0.875rem;color:#374151;margin-bottom:0.75rem;';
     card.appendChild(summary);
   }
 

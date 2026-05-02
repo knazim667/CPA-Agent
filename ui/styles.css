@@ -1085,3 +1085,7 @@ tfoot td {
   margin-bottom: 20px;
   color: var(--text);
 }
+
+/* ── 44. Utility ──────────────────────────────────────────── */
+.muted { color: var(--muted); font-size: 11px; }
+.draft-card-summary { font-size: 13px; color: var(--muted); margin-bottom: 12px; }
