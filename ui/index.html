@@ -652,33 +652,36 @@
 
         </section>
 
-        <!-- Chat tab -->
-        <section id="tab-chat" class="tab-content hidden">
-
-          <div class="chat-shell">
-            <div class="chat-controls">
-              <button id="voice-button">Start Voice</button>
-              <span id="voice-status">Browser voice idle</span>
-              <button id="speak-toggle">Voice Replies On</button>
-            </div>
-
-            <div id="chat-log"></div>
-
-            <form id="chat-form">
-              <textarea
-                id="message-input"
-                rows="3"
-                placeholder="Ask CPA-Agent to record a transaction, summarize notes, or switch business context."
-              ></textarea>
-              <div class="chat-submit-row">
-                <button type="submit">Send</button>
-              </div>
-            </form>
-          </div>
-
-        </section>
+        <button id="ai-panel-toggle" class="ai-panel-toggle" aria-label="Toggle AI panel">&#10094; AI</button>
 
       </main>
+
+      <aside id="ai-panel" class="ai-panel">
+        <div class="ai-panel-header">
+          <span class="ai-panel-title">AI Co-pilot</span>
+          <div class="ai-panel-header-actions">
+            <button id="ai-voice-btn" class="icon-btn" title="Voice input">&#127908;</button>
+            <button id="ai-speak-toggle" class="icon-btn" title="Voice replies">&#128266;</button>
+            <button id="ai-clear-chat" class="icon-btn" title="Clear chat">&#128465;</button>
+          </div>
+        </div>
+
+        <div id="ai-chat-log" class="ai-chat-log"></div>
+
+        <div class="ai-panel-footer">
+          <div id="ai-context-chip" class="ai-context-chip">&#128202; Viewing: Dashboard</div>
+          <form id="ai-chat-form" class="ai-chat-form">
+            <textarea
+              id="ai-message-input"
+              class="ai-message-input"
+              rows="2"
+              placeholder="Ask CPA-Agent anything&#8230;"
+            ></textarea>
+            <button type="submit" class="ai-send-btn">&#8593;</button>
+          </form>
+          <span id="ai-voice-status" class="ai-voice-status"></span>
+        </div>
+      </aside>
 
     </div>
 
