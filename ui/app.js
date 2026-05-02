@@ -675,6 +675,92 @@ function initTax() {
    6. Tab routing
    ---------------------------------------------------------- */
 
+var TAB_LABELS = {
+  'dashboard':     'Dashboard',
+  'ledger':        'Ledger',
+  'recurring':     'Recurring',
+  'reports':       'P&L Report',
+  'balance-sheet': 'Balance Sheet',
+  'cash-flow':     'Cash Flow',
+  'budget':        'Budget',
+  'ar-ap':         'AR / AP',
+  'reconcile':     'Reconcile',
+  'tax':           'Tax',
+  'documents':     'Documents'
+};
+
+function updateContextChip(tab) {
+  var chip = document.getElementById('ai-context-chip');
+  var sectionEl = document.getElementById('top-bar-section');
+  var label = TAB_LABELS[tab] || tab;
+  var now = new Date();
+  var month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
+  if (chip) { chip.textContent = '\u{1F4C8} Viewing: ' + label + ' · ' + month; }
+  if (sectionEl) { sectionEl.textContent = label; }
+}
+
+function initThemeToggle() {
+  var btn = document.getElementById('theme-toggle');
+  if (!btn) { return; }
+
+  function applyTheme(theme) {
+    if (theme === 'light') {
+      document.documentElement.setAttribute('data-theme', 'light');
+      btn.textContent = '☀';
+    } else {
+      document.documentElement.removeAttribute('data-theme');
+      btn.textContent = '☽';
+    }
+    try { localStorage.setItem('cpa-theme', theme); } catch (e) {}
+  }
+
+  var current = 'dark';
+  try { current = localStorage.getItem('cpa-theme') || 'dark'; } catch (e) {}
+  applyTheme(current);
+
+  btn.addEventListener('click', function () {
+    var next = document.documentElement.getAttribute('data-theme') === 'light' ? 'dark' : 'light';
+    applyTheme(next);
+  });
+}
+
+function initAiPanel() {
+  var panel = document.getElementById('ai-panel');
+  var toggleBtn = document.getElementById('ai-panel-toggle');
+  var clearBtn = document.getElementById('ai-clear-chat');
+  var isOpen = true;
+
+  function setPanelState(open) {
+    isOpen = open;
+    if (panel) {
+      panel.style.width = open ? '' : '0';
+      panel.classList.toggle('ai-panel-closed', !open);
+    }
+    if (toggleBtn) {
+      toggleBtn.textContent = open ? '⟨ AI' : 'AI ⟩';
+      toggleBtn.style.right = open ? 'calc(var(--ai-panel-w) + 4px)' : '4px';
+    }
+  }
+
+  if (toggleBtn) {
+    toggleBtn.addEventListener('click', function () {
+      setPanelState(!isOpen);
+    });
+  }
+
+  if (clearBtn) {
+    clearBtn.addEventListener('click', function () {
+      fetch('/api/clear-conversation', { method: 'POST' })
+        .then(function () {
+          if (chatLog) { chatLog.textContent = ''; }
+          lastRenderedConvLength = -1;
+          showToast('Conversation cleared', 'success');
+        })
+        .catch(function (err) { showToast('Clear failed: ' + err, 'error'); });
+    });
+  }
+}
+
 function initTabs() {
   var items = document.querySelectorAll('.sidebar-item');
   items.forEach(function (item) {
@@ -698,11 +784,7 @@ function initTabs() {
       if (tab === 'ar-ap') { fetchArAp(); }
       if (tab === 'reconcile') { /* upload handled via form */ }
       if (tab === 'tax') { fetchTax(); }
-      if (tab === 'chat') {
-        // Force a fresh render of chat history when switching to chat tab
-        lastRenderedConvLength = -1;
-        fetchStatus();
-      }
+      updateContextChip(tab);
     });
   });
   // Activate dashboard by default
@@ -731,6 +813,8 @@ function initSettings() {
   }
 
   if (openBtn) { openBtn.addEventListener('click', openSettings); }
+  var openBtnSidebar = document.getElementById('settings-open-sidebar');
+  if (openBtnSidebar) { openBtnSidebar.addEventListener('click', openSettings); }
   if (closeBtn) { closeBtn.addEventListener('click', closeSettings); }
   if (backdrop) { backdrop.addEventListener('click', closeSettings); }
 
@@ -830,12 +914,9 @@ function updateStatus(status) {
   renderTaxAlerts(status.tax_alerts || []);
   renderArApAlerts(status.overdue_ar_ap || {}, status.upcoming_ar_ap || {});
 
-  // Conversation — only render when chat tab is visible
+  // AI panel is always visible — render conversation unconditionally
   if (status.conversation) {
-    var chatSection = document.getElementById('tab-chat');
-    if (chatSection && !chatSection.classList.contains('hidden')) {
-      renderConversation(status.conversation, latestPresentation);
-    }
+    renderConversation(status.conversation, latestPresentation);
   }
 
   // Provider / mode selects in settings
@@ -1885,9 +1966,9 @@ function fetchStatus() {
 
 document.addEventListener('DOMContentLoaded', function () {
   /* Grab DOM references */
-  chatLog              = document.getElementById('chat-log');
-  chatForm             = document.getElementById('chat-form');
-  messageInput         = document.getElementById('message-input');
+  chatLog              = document.getElementById('ai-chat-log');
+  chatForm             = document.getElementById('ai-chat-form');
+  messageInput         = document.getElementById('ai-message-input');
   businessSelect       = document.getElementById('business-select');
   providerSelect       = document.getElementById('provider-select');
   modelModeSelect      = document.getElementById('model-mode-select');
@@ -1939,14 +2020,17 @@ document.addEventListener('DOMContentLoaded', function () {
   netProfitValue       = document.getElementById('net-profit-value');
   netProfitRow         = document.getElementById('net-profit-row');
   documentDrafts       = document.getElementById('document-drafts');
-  voiceButton          = document.getElementById('voice-button');
-  voiceStatus          = document.getElementById('voice-status');
-  speakToggle          = document.getElementById('speak-toggle');
+  voiceButton          = document.getElementById('ai-voice-btn');
+  voiceStatus          = document.getElementById('ai-voice-status');
+  speakToggle          = document.getElementById('ai-speak-toggle');
 
   /* Set default date for transaction form */
   if (txDate) { txDate.value = new Date().toISOString().slice(0, 10); }
 
   /* Init all subsystems */
+  initThemeToggle();
+  initAiPanel();
+  updateContextChip('dashboard');
   initTabs();
   initSettings();
   initProviderSwitch();
