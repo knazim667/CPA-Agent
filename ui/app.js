@@ -844,6 +844,13 @@ function updateStatus(status) {
     });
   }
 
+  var greetingEl = document.getElementById('dash-greeting');
+  if (greetingEl && status.active_business) {
+    var hour = new Date().getHours();
+    var timeOfDay = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
+    greetingEl.textContent = timeOfDay + ', ' + status.active_business.business_name;
+  }
+
   // Model badge
   if (modelBadge && status.model_config) {
     modelBadge.textContent =
