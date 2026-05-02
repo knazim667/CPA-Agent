@@ -564,16 +564,16 @@ function renderTax(data) {
       var isOverdue = dlDate < today;
       var isUpcoming = alertDates[dl.deadline] !== undefined;
 
-      // Determine badge color
-      var badgeColor, badgeText;
+      // Determine badge class
+      var badgeClass, badgeText;
       if (isOverdue) {
-        badgeColor = '#ef4444'; // Red
+        badgeClass = 'badge badge-overdue';
         badgeText = 'Overdue';
       } else if (isUpcoming) {
-        badgeColor = '#3b82f6'; // Blue
+        badgeClass = 'badge badge-pending';
         badgeText = 'Due in ' + alertDates[dl.deadline] + ' days';
       } else {
-        badgeColor = '#6b7280'; // Grey
+        badgeClass = 'badge';
         badgeText = 'Future';
       }
 
@@ -584,7 +584,7 @@ function renderTax(data) {
       left.innerHTML = '<strong>' + esc(dl.quarter || '') + '</strong>: ' + esc(dl.description || '') + '<br><span style="font-size:0.75rem;color:#6b7280;">' + esc(dl.deadline || '') + '</span>';
 
       var badge = document.createElement('span');
-      badge.style.cssText = 'background:' + badgeColor + ';color:#fff;padding:0.2rem 0.5rem;border-radius:4px;font-size:0.7rem;font-weight:600;';
+      badge.className = badgeClass;
       badge.textContent = badgeText;
 
       item.appendChild(left);
@@ -1000,7 +1000,7 @@ function renderTaxAlerts(alerts) {
 
   alerts.forEach(function (alert) {
     var daysUntil = alert.days_until != null ? alert.days_until : Infinity;
-    var badgeColor = daysUntil <= 7 ? '#dc2626' : daysUntil <= 14 ? '#f59e0b' : '#6b7280';
+    var badgeClass = daysUntil <= 7 ? 'badge badge-overdue' : daysUntil <= 14 ? 'badge badge-pending' : 'badge';
 
     var item = document.createElement('div');
     item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
@@ -1022,8 +1022,7 @@ function renderTaxAlerts(alerts) {
 
     // Right column: days-remaining badge
     var badge = document.createElement('span');
-    badge.style.cssText = 'background:' + badgeColor + ';color:#fff;padding:0.2rem 0.5rem;' +
-      'border-radius:4px;font-size:0.7rem;font-weight:600;white-space:nowrap;';
+    badge.className = badgeClass;
     badge.textContent = 'Due in ' + daysUntil + ' days';
 
     item.appendChild(left);
@@ -1065,24 +1064,21 @@ function renderArApAlerts(overdue, upcoming) {
   if (!list) { return; }
   list.textContent = '';
 
-  function addRow(label, count, color) {
+  function addRow(label, count, badgeClass) {
     if (!count) { return; }
     var item = document.createElement('div');
-    item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
-      'padding:0.4rem 0;border-bottom:1px solid #e5e7eb;';
     var txt = document.createTextNode(label);
     var badge = document.createElement('span');
-    badge.style.cssText = 'background:' + color + ';color:#fff;padding:0.2rem 0.5rem;' +
-      'border-radius:4px;font-size:0.7rem;font-weight:600;';
+    badge.className = 'badge ' + badgeClass;
     badge.textContent = count;
     item.appendChild(txt);
     item.appendChild(badge);
     list.appendChild(item);
   }
 
-  addRow('Overdue receivables', overdueR, '#dc2626');
-  addRow('Overdue payables', overdueP, '#dc2626');
-  addRow('Payables due within 7 days', upcomingP, '#f59e0b');
+  addRow('Overdue receivables', overdueR, 'badge-expense');
+  addRow('Overdue payables', overdueP, 'badge-expense');
+  addRow('Payables due within 7 days', upcomingP, 'badge-overdue');
 
   // One-time toast per session for overdue items
   var alertKey = overdueR + ':' + overdueP;
