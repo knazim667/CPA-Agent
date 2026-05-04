@@ -28,6 +28,9 @@ uploads/
 # Tool artifacts
 .playwright-mcp/
 
+# Superpowers planning/spec docs
+docs/superpowers/
+
 # Editor and test artifacts
 .pytest_cache/
 .mypy_cache/
