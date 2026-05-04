@@ -101,6 +101,9 @@ class GoogleWorkspaceAuth:
         with open(token_path, "w", encoding="utf-8") as handle:
             handle.write(credentials.to_json())
 
+    def reset_service(self, name: str) -> None:
+        self._services.pop(name, None)
+
     def auth_summary(self) -> dict[str, str]:
         mode = "oauth2" if self._oauth_client_exists() else "service_account"
         return {

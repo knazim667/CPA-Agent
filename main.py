@@ -34,6 +34,16 @@ PERSONA_DIR = ROOT_DIR / "persona"
 SYSTEM_PROMPT_PATH = PERSONA_DIR / "system_prompt.md"
 CUSTOM_RULES_PATH = PERSONA_DIR / "custom_rules.json"
 
+ACTION_SWITCH_BUSINESS = "switch_business"
+ACTION_CREATE_BUSINESS = "create_business"
+ACTION_RECORD_TRANSACTION = "record_transaction"
+ACTION_READ_SHEET = "read_sheet"
+ACTION_CREATE_BUSINESS_DOC = "create_business_doc"
+ACTION_APPEND_DOC_NOTE = "append_doc_note"
+ACTION_CALCULATE_PAYROLL = "calculate_payroll"
+ACTION_RESEARCH_TAX = "research_tax"
+ACTION_RESPOND = "respond"
+
 
 class CPAAgent:
     LEDGER_HEADERS = [
@@ -84,6 +94,7 @@ class CPAAgent:
         self.wake_words = ("hey cpa-agent", "hey cpa agent", "cpa-agent", "cpa agent")
         self.input_mode = self._determine_input_mode()
         self.workspace_boot_error: str | None = None
+        self._workbook_ready: set[str] = set()
         self._load_persona_assets()
         try:
             self.ensure_business_workspace_assets()
@@ -264,10 +275,10 @@ class CPAAgent:
             return None
 
     def execute_action(self, plan: dict[str, Any], user_input: str) -> dict[str, Any]:
-        action = plan.get("action", "respond")
+        action = plan.get("action", ACTION_RESPOND)
         parameters = plan.get("parameters", {})
 
-        if action == "switch_business":
+        if action == ACTION_SWITCH_BUSINESS:
             business_name = parameters.get("business_name") or self.detect_business_switch(user_input)
             if not business_name:
                 raise ValueError("Business switch requested without a business name.")
@@ -278,7 +289,7 @@ class CPAAgent:
                 "details": new_profile,
             }
 
-        if action == "create_business":
+        if action == ACTION_CREATE_BUSINESS:
             business_name = parameters.get("business_name") or self.detect_business_creation(user_input)
             if not business_name:
                 raise ValueError("Business creation requested without a business name.")
@@ -315,7 +326,7 @@ class CPAAgent:
                 },
             }
 
-        if action == "record_transaction":
+        if action == ACTION_RECORD_TRANSACTION:
             profile = self.ensure_business_workspace_assets()
             values = self._normalize_bulk_values(parameters.get("values"))
             if not values:
@@ -411,7 +422,7 @@ class CPAAgent:
                 },
             }
 
-        if action == "read_sheet":
+        if action == ACTION_READ_SHEET:
             profile = self.ensure_business_workspace_assets()
             values = self.sheets.read_range(
                 spreadsheet_id=profile["google_sheet_id"],
@@ -419,7 +430,7 @@ class CPAAgent:
             )
             return {"status": "success", "message": "Sheet data retrieved.", "details": values}
 
-        if action == "create_business_doc":
+        if action == ACTION_CREATE_BUSINESS_DOC:
             profile = self.ensure_business_workspace_assets()
             return {
                 "status": "success",
@@ -427,7 +438,7 @@ class CPAAgent:
                 "details": {"document_id": profile["google_doc_id"]},
             }
 
-        if action == "append_doc_note":
+        if action == ACTION_APPEND_DOC_NOTE:
             profile = self.ensure_business_workspace_assets()
             result = self.docs.append_text(
                 document_id=profile["google_doc_id"],
@@ -435,7 +446,7 @@ class CPAAgent:
             )
             return {"status": "success", "message": "Document note saved.", "details": result}
 
-        if action == "calculate_payroll":
+        if action == ACTION_CALCULATE_PAYROLL:
             from skills.payroll_engine import calculate_simple_payroll
             gross_pay = self._safe_float(parameters.get("gross_pay", 0))
             federal_rate = float(parameters.get("federal_rate", 0.12))
@@ -448,7 +459,7 @@ class CPAAgent:
                 "details": {"gross_pay": calc.gross_pay, "federal_withholding": calc.federal_withholding, "social_security": calc.social_security, "medicare": calc.medicare, "net_pay": calc.net_pay},
             }
 
-        if action == "research_tax":
+        if action == ACTION_RESEARCH_TAX:
             from skills.tax_researcher import fetch_tax_update
             url = parameters.get("url", "").strip()
             if not url:
@@ -799,7 +810,7 @@ class CPAAgent:
             try:
                 rows = self.sheets.read_range(
                     spreadsheet_id=current["google_sheet_id"],
-                    range_name="Ledger!A1:G",
+                    range_name="Ledger!A1:G2000",
                 )
                 totals = self._summarize_ledger_rows(rows)
             except Exception as exc:  # noqa: BLE001
@@ -821,9 +832,24 @@ class CPAAgent:
             "ledger_error": totals.get("ledger_error"),
         }
 
+    _STATUS_CACHE_TTL = 2.0  # seconds — deduplicates within-request calls
+
     def get_status(self) -> dict[str, Any]:
-        # Run any recurring transactions due today
-        due = self.recurring.run_due_schedules()
+        now = time.monotonic()
+        if hasattr(self, "_status_cache"):
+            ts, cached = self._status_cache
+            if now - ts < self._STATUS_CACHE_TTL:
+                return cached
+        result = self._build_status()
+        self._status_cache = (now, result)
+        return result
+
+    def _build_status(self) -> dict[str, Any]:
+        today_str = date.today().isoformat()
+        due: list = []
+        if today_str != getattr(self, "_last_schedule_check", None):
+            due = self.recurring.run_due_schedules()
+            self._last_schedule_check = today_str
         if due:
             self._save_recurring()
             for entry in due:
@@ -1118,11 +1144,12 @@ class CPAAgent:
             updates["google_sheet_id"] = spreadsheet["spreadsheetId"]
 
         target_sheet_id = updates.get("google_sheet_id", profile.get("google_sheet_id", ""))
-        if target_sheet_id:
+        if target_sheet_id and target_sheet_id not in self._workbook_ready:
             self.sheets.ensure_financial_workbook(
                 spreadsheet_id=target_sheet_id,
                 business_name=business_name,
             )
+            self._workbook_ready.add(target_sheet_id)
 
         if not profile.get("google_doc_id") or str(profile["google_doc_id"]).startswith("replace-with-"):
             document = self.docs.create_document(
@@ -1136,11 +1163,6 @@ class CPAAgent:
 
         if updates:
             profile = self.memory.update_business_profile(self.memory.current_business_key, updates)
-        elif target_sheet_id:
-            self.sheets.ensure_financial_workbook(
-                spreadsheet_id=target_sheet_id,
-                business_name=business_name,
-            )
         return profile
 
     def self_reflect(self, user_input: str, draft_result: dict[str, Any]) -> dict[str, Any]:
@@ -1394,34 +1416,25 @@ class CPAAgent:
 
     def detect_ar_ap_command(self, user_input: str) -> dict | None:
         lower = user_input.lower()
-        if ("add" in lower or "create" in lower or "new" in lower) and ("receivable" in lower or "invoice" in lower or "bill" in lower or "owed" in lower):
+        is_add = ("add" in lower or "create" in lower or "new" in lower)
+        is_ar_keyword = ("receivable" in lower or "invoice" in lower or "owed" in lower)
+        is_ap_keyword = ("bill" in lower or "payable" in lower)
+
+        if is_add and (is_ar_keyword or is_ap_keyword):
             amount_match = re.search(r'\$?([\d,]+\.?\d*)', user_input)
             amount = float(amount_match.group(1).replace(',', '')) if amount_match else None
+            cv_match = re.search(r'(?:from|for|to)\s+([A-Za-z0-9\s&]+?)(?:\s+\$|$)', lower)
+            client_vendor = cv_match.group(1).strip().title() if cv_match else None
+            action = "add_receivable" if is_ar_keyword else "add_payable"
+            return {"action": action, "amount": amount, "client_vendor": client_vendor}
 
-            client_vendor = None
-            for_pattern = re.search(r'(?:from|for|to)\s+([A-Za-z0-9\s&]+?)(?:\s+\$|$)', lower)
-            if for_pattern:
-                client_vendor = for_pattern.group(1).strip().title()
+        if ("mark" in lower or "payment" in lower or "paid" in lower) and (is_ar_keyword or is_ap_keyword):
+            entry_type = "receivable" if is_ar_keyword else "payable"
+            return {"action": "mark_paid", "entry_type": entry_type}
 
-            return {
-                "action": "add_receivable" if "receivable" in lower or "invoice" in lower or "owed" in lower else "add_payable",
-                "amount": amount,
-                "client_vendor": client_vendor
-            }
-
-        # "mark paid", "payment received", "paid invoice"
-        if ("mark" in lower or "payment" in lower or "paid" in lower) and ("receivable" in lower or "invoice" in lower or "payable" in lower or "bill" in lower):
-            entry_type = "receivable" if "receivable" in lower or "invoice" in lower else "payable"
-            return {
-                "action": "mark_paid",
-                "entry_type": entry_type
-            }
-
-        # "show receivables", "list payables", "ar ap", "accounts receivable"
-        if ("show" in lower or "list" in lower or "get" in lower) and ("receivable" in lower or "payable" in lower or "ar" in lower or "ap" in lower or "accounts" in lower):
+        if ("show" in lower or "list" in lower or "get" in lower) and (is_ar_keyword or is_ap_keyword or "ar" in lower or "ap" in lower or "accounts" in lower):
             return {"action": "list_ar_ap"}
 
-        # "overdue", "late payments"
         if "overdue" in lower or "late" in lower:
             return {"action": "get_overdue"}
 

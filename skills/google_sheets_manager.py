@@ -26,7 +26,7 @@ class GoogleSheetsManager:
 
     def _reset_service(self) -> None:
         self._service = None
-        self.auth._services.pop("sheets:v4", None)
+        self.auth.reset_service("sheets:v4")
 
     @staticmethod
     def _is_broken_pipe_error(exc: Exception) -> bool:
@@ -151,7 +151,7 @@ class GoogleSheetsManager:
             ],
         )
         self.apply_accounting_layout(spreadsheet_id, by_name)
-        return self._execute(lambda service: service.spreadsheets().get(spreadsheetId=spreadsheet_id))
+        return spreadsheet
 
     def read_range(self, spreadsheet_id: str, range_name: str) -> list[list[str]]:
         response = (

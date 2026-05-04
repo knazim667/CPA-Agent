@@ -62,6 +62,7 @@ var recognition = null;
 var isListening = false;
 var latestPresentation = null;
 var seenAlertDeadlines = new Set();
+var MAX_SEEN_ALERTS = 50;
 
 /* ----------------------------------------------------------
    4. DOM element references (populated after DOMContentLoaded)
@@ -1007,6 +1008,7 @@ function renderTaxAlerts(alerts) {
           ' days (' + (alert.deadline || '') + ')',
         'warning'
       );
+      if (seenAlertDeadlines.size >= MAX_SEEN_ALERTS) { seenAlertDeadlines.clear(); }
       seenAlertDeadlines.add(alert.deadline);
     }
   });
@@ -1016,7 +1018,7 @@ function renderTaxAlerts(alerts) {
    11b. Render AR/AP proactive alerts on dashboard
    ---------------------------------------------------------- */
 
-var seenArApAlerts = new Set();
+var lastArApAlertKey = null;
 
 function renderArApAlerts(overdue, upcoming) {
   var container = document.getElementById('ar-ap-alerts-dashboard');
@@ -1053,8 +1055,8 @@ function renderArApAlerts(overdue, upcoming) {
 
   // One-time toast per session for overdue items
   var alertKey = overdueR + ':' + overdueP;
-  if ((overdueR || overdueP) && !seenArApAlerts.has(alertKey)) {
-    seenArApAlerts.add(alertKey);
+  if ((overdueR || overdueP) && alertKey !== lastArApAlertKey) {
+    lastArApAlertKey = alertKey;
     showToast(
       'AR/AP alert: ' + (overdueR ? overdueR + ' overdue receivable(s) ' : '') +
       (overdueP ? overdueP + ' overdue payable(s)' : ''),
@@ -1995,6 +1997,5 @@ document.addEventListener('DOMContentLoaded', function () {
   /* Initial data load + live 5-second poll */
   fetchStatus();
   fetchRecurring();
-  fetchArAp();
   setInterval(fetchStatus, 5000);
 });
