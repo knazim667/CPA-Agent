@@ -6,6 +6,7 @@ import re
 import shlex
 import subprocess
 import time
+from datetime import date, timedelta
 from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
@@ -127,8 +128,12 @@ class CPAAgent:
         self.memory.save_recurring(self.recurring.get_recurring_data())
 
     def refresh_rules(self) -> None:
+        mtime = CUSTOM_RULES_PATH.stat().st_mtime
+        if mtime == getattr(self, "_rules_mtime", None):
+            return
         with CUSTOM_RULES_PATH.open("r", encoding="utf-8") as handle:
             self.custom_rules = json.load(handle)
+        self._rules_mtime = mtime
 
     def speak(self, message: str) -> None:
         safe_message = shlex.quote(message)
@@ -249,6 +254,14 @@ class CPAAgent:
                 "parameters": {},
                 "response": response_text.strip(),
             }
+
+    def _parse_json_response(self, text: str) -> dict[str, Any] | None:
+        try:
+            start = text.index("{")
+            end = text.rindex("}") + 1
+            return json.loads(text[start:end])
+        except (ValueError, json.JSONDecodeError):
+            return None
 
     def execute_action(self, plan: dict[str, Any], user_input: str) -> dict[str, Any]:
         action = plan.get("action", "respond")
@@ -475,7 +488,6 @@ class CPAAgent:
             notes.strip(),
         ]
 
-        # Duplicate guard — block if same date/amount/type already exists
         duplicate = self.sheets.find_duplicate_row(
             spreadsheet_id=profile["google_sheet_id"],
             date=date.strip(),
@@ -704,11 +716,8 @@ class CPAAgent:
             },
         ]
         response_text = self.model_client.chat(prompt)
-        try:
-            start = response_text.index("{")
-            end = response_text.rindex("}") + 1
-            payload = json.loads(response_text[start:end])
-        except (ValueError, json.JSONDecodeError):
+        payload = self._parse_json_response(response_text)
+        if payload is None:
             return {
                 "ok": False,
                 "message": "I could not convert that document into a clean draft table yet.",
@@ -1158,16 +1167,14 @@ class CPAAgent:
             },
         ]
         reflection_text = self.reflection_client.chat(reflection_prompt)
-        try:
-            start = reflection_text.index("{")
-            end = reflection_text.rindex("}") + 1
-            return json.loads(reflection_text[start:end])
-        except (ValueError, json.JSONDecodeError):
-            return {
-                "approved": False,
-                "concerns": ["Reflection step returned malformed output."],
-                "corrected_message": "I need a manual review before I confirm that action.",
-            }
+        result = self._parse_json_response(reflection_text)
+        if result is not None:
+            return result
+        return {
+            "approved": False,
+            "concerns": ["Reflection step returned malformed output."],
+            "corrected_message": "I need a manual review before I confirm that action.",
+        }
 
     def update_short_term_memory(self, user_input: str, outcome: dict[str, Any]) -> None:
         self.memory.append_conversation_entry(
@@ -1344,9 +1351,8 @@ class CPAAgent:
         return self._clean_response_text(final_message)
 
     def detect_recurring_command(self, user_input: str) -> dict | None:
-        import re as _re
         lower = user_input.lower()
-        m = _re.search(
+        m = re.search(
             r"schedule\s+(.+?)\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(expense|income)\s+on\s+the\s+(\d+)(?:st|nd|rd|th)?\s+every\s+(\w+)",
             lower,
         )
@@ -1365,10 +1371,8 @@ class CPAAgent:
         return None
 
     def detect_budget_command(self, user_input: str) -> dict | None:
-        import re as _re
         lower = user_input.lower()
-        # "set marketing budget $1000 per month" or "budget marketing $1000 monthly"
-        m = _re.search(
+        m = re.search(
             r"(?:set\s+)?(?P<cat>[a-z &]+?)\s+budget\s+\$?([\d,]+(?:\.\d{1,2})?)\s+(?:per\s+month|monthly|a\s+month)",
             lower,
         )
@@ -1382,7 +1386,6 @@ class CPAAgent:
         return None
 
     def detect_reconcile_command(self, user_input: str) -> dict | None:
-        import re as _re
         lower = user_input.lower()
         # "reconcile bank statement" or "upload bank statement for reconciliation"
         if "reconcile" in lower and ("bank" in lower or "statement" in lower or "csv" in lower):
@@ -1390,18 +1393,13 @@ class CPAAgent:
         return None
 
     def detect_ar_ap_command(self, user_input: str) -> dict | None:
-        import re as _re
         lower = user_input.lower()
-        # "add receivable", "add invoice", "money owed to me"
         if ("add" in lower or "create" in lower or "new" in lower) and ("receivable" in lower or "invoice" in lower or "bill" in lower or "owed" in lower):
-            # Try to extract amount and description
-            amount_match = _re.search(r'\$?([\d,]+\.?\d*)', user_input)
+            amount_match = re.search(r'\$?([\d,]+\.?\d*)', user_input)
             amount = float(amount_match.group(1).replace(',', '')) if amount_match else None
 
-            # Try to extract client/vendor name
-            # Look for patterns like "from ClientName" or "for ClientName" or "to ClientName"
             client_vendor = None
-            for_pattern = _re.search(r'(?:from|for|to)\s+([A-Za-z0-9\s&]+?)(?:\s+\$|$)', lower)
+            for_pattern = re.search(r'(?:from|for|to)\s+([A-Za-z0-9\s&]+?)(?:\s+\$|$)', lower)
             if for_pattern:
                 client_vendor = for_pattern.group(1).strip().title()
 
@@ -1430,7 +1428,6 @@ class CPAAgent:
         return None
 
     def detect_tax_command(self, user_input: str) -> dict | None:
-        import re as _re
         lower = user_input.lower()
         # "tax estimate", "calculate tax", "what do i owe"
         if ("tax" in lower or "owe" in lower) and ("estimate" in lower or "calculate" in lower or "owe" in lower or "payment" in lower):
@@ -1475,7 +1472,6 @@ class CPAAgent:
 
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
         import calendar as _cal
-        from datetime import date as _date
 
         # Delete duplicates command
         delete_cmd = self.detect_delete_command(user_input)
@@ -1575,11 +1571,8 @@ class CPAAgent:
                         "status": self.get_status(),
                         "presentation": None,
                     }
-                # Use categorization engine to suggest category, or default to Accounts Receivable
                 cat = self.categorization.suggest_category(client_vendor) if client_vendor else None
                 category = cat["category"] if cat else "Accounts Receivable"
-                # Default due date to 30 days from now
-                from datetime import date, timedelta
                 due_date = (date.today() + timedelta(days=30)).isoformat()
                 result = self.ar_ap_engine.add_receivable(
                     client=client_vendor,
@@ -1601,11 +1594,8 @@ class CPAAgent:
                         "status": self.get_status(),
                         "presentation": None,
                     }
-                # Use categorization engine to suggest category, or default to Accounts Payable
                 cat = self.categorization.suggest_category(client_vendor) if client_vendor else None
                 category = cat["category"] if cat else "Accounts Payable"
-                # Default due date to 30 days from now
-                from datetime import date, timedelta
                 due_date = (date.today() + timedelta(days=30)).isoformat()
                 result = self.ar_ap_engine.add_payable(
                     vendor=client_vendor,
@@ -1619,7 +1609,6 @@ class CPAAgent:
                     "presentation": None,
                 }
             elif action == "mark_paid":
-                from datetime import date as _date_cls
                 entry_type = ar_ap_cmd.get("entry_type", "receivable")
                 data = self.ar_ap_engine.get_ar_ap()
                 collection = "receivables" if entry_type == "receivable" else "payables"
@@ -1631,7 +1620,7 @@ class CPAAgent:
                         "presentation": None,
                     }
                 latest_entry = max(open_entries, key=lambda x: x["issue_date"])
-                paid_date = _date_cls.today().isoformat()
+                paid_date = date.today().isoformat()
                 self.ar_ap_engine.mark_paid(
                     entry_id=latest_entry["id"],
                     entry_type=entry_type,
@@ -1703,7 +1692,6 @@ class CPAAgent:
                     "presentation": None,
                 }
             elif action == "get_tax_deadlines":
-                from datetime import date
                 current_year = date.today().year
                 deadlines = self.tax_engine.get_irs_deadlines(current_year)
                 deadline_strs = [f"{d['description']}: {d['deadline']}" for d in deadlines]

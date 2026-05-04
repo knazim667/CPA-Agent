@@ -36,64 +36,28 @@ class TaxEngine:
             return 0.0
         return net_income * 0.9235 * 0.153
 
+    # 2026 single-filer brackets: (width, rate)
+    _FEDERAL_BRACKETS = [
+        (11_600,              0.10),
+        (47_300  - 11_600,   0.12),
+        (95_375  - 47_300,   0.22),
+        (182_100 - 95_375,   0.24),
+        (231_250 - 182_100,  0.32),
+        (578_125 - 231_250,  0.35),
+        (float("inf"),        0.37),
+    ]
+
     def compute_estimated_federal(self, net_income: float) -> float:
-        """
-        Compute estimated federal income tax using 2026 brackets for single filer
-        2026 Tax Brackets for Single Filers:
-        10%: $0 - $11,600
-        12%: $11,600 - $47,300
-        22%: $47,300 - $95,375
-        24%: $95,375 - $182,100
-        32%: $182,100 - $231,250
-        35%: $231,250 - $578,125
-        37%: $578,125+
-        """
         if net_income <= 0:
             return 0.0
-
         tax = 0.0
-        remaining_income = net_income
-
-        # 10% bracket
-        if remaining_income > 0:
-            bracket_amount = min(remaining_income, 11600)
-            tax += bracket_amount * 0.10
-            remaining_income -= bracket_amount
-
-        # 12% bracket
-        if remaining_income > 0:
-            bracket_amount = min(remaining_income, 47300 - 11600)
-            tax += bracket_amount * 0.12
-            remaining_income -= bracket_amount
-
-        # 22% bracket
-        if remaining_income > 0:
-            bracket_amount = min(remaining_income, 95375 - 47300)
-            tax += bracket_amount * 0.22
-            remaining_income -= bracket_amount
-
-        # 24% bracket
-        if remaining_income > 0:
-            bracket_amount = min(remaining_income, 182100 - 95375)
-            tax += bracket_amount * 0.24
-            remaining_income -= bracket_amount
-
-        # 32% bracket
-        if remaining_income > 0:
-            bracket_amount = min(remaining_income, 231250 - 182100)
-            tax += bracket_amount * 0.32
-            remaining_income -= bracket_amount
-
-        # 35% bracket
-        if remaining_income > 0:
-            bracket_amount = min(remaining_income, 578125 - 231250)
-            tax += bracket_amount * 0.35
-            remaining_income -= bracket_amount
-
-        # 37% bracket
-        if remaining_income > 0:
-            tax += remaining_income * 0.37
-
+        remaining = net_income
+        for width, rate in self._FEDERAL_BRACKETS:
+            if remaining <= 0:
+                break
+            taxable = min(remaining, width)
+            tax += taxable * rate
+            remaining -= taxable
         return tax
 
     def get_quarterly_estimate(self, net_income: float, year: int) -> Dict[str, Any]:
@@ -204,9 +168,9 @@ class TaxEngine:
 
         for row in ledger_rows:
             if len(row) >= 5:
-                entry_type = str(row[4]).strip() if row[4] else ""  # Type at index 4
+                entry_type = str(row[4]).strip() if row[4] else ""
                 try:
-                    amount = float(str(row[3]).replace(",", "").replace("$", "")) if row[3] else 0.0  # Amount at index 3
+                    amount = float(str(row[3]).replace(",", "").replace("$", "")) if row[3] else 0.0
                 except (ValueError, TypeError):
                     amount = 0.0
 

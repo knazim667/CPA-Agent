@@ -6,6 +6,11 @@ from typing import Any
 from core.google_auth import GoogleWorkspaceAuth
 
 
+SHEET_LEDGER = "Ledger"
+SHEET_PNL = "P&L Summary"
+SHEET_DASHBOARD = "Dashboard"
+
+
 class GoogleSheetsManager:
     """Thin Google Sheets wrapper for business-specific ledger access."""
 
@@ -102,7 +107,7 @@ class GoogleSheetsManager:
         by_name = {sheet["properties"]["title"]: sheet["properties"]["sheetId"] for sheet in sheets}
         requests_body = {"requests": []}
 
-        for title in ("Ledger", "P&L Summary", "Dashboard"):
+        for title in (SHEET_LEDGER, SHEET_PNL, SHEET_DASHBOARD):
             if title not in by_name:
                 requests_body["requests"].append({"addSheet": {"properties": {"title": title}}})
 
@@ -119,12 +124,12 @@ class GoogleSheetsManager:
 
         self.update_range(
             spreadsheet_id=spreadsheet_id,
-            range_name="Ledger!A1:G1",
+            range_name=f"{SHEET_LEDGER}!A1:G1",
             values=[["Date", "Description", "Category", "Amount", "Type", "Reference", "Notes"]],
         )
         self.update_range(
             spreadsheet_id=spreadsheet_id,
-            range_name="P&L Summary!A1:B5",
+            range_name=f"{SHEET_PNL}!A1:B5",
             values=[
                 [f"{business_name} Profit & Loss", ""],
                 ["Metric", "Value"],
@@ -135,7 +140,7 @@ class GoogleSheetsManager:
         )
         self.update_range(
             spreadsheet_id=spreadsheet_id,
-            range_name="Dashboard!A1:B6",
+            range_name=f"{SHEET_DASHBOARD}!A1:B6",
             values=[
                 [f"{business_name} Dashboard", ""],
                 ["Latest Update", '=IF(COUNTA(Ledger!A:A)>1,MAX(Ledger!A2:A),"")'],
@@ -320,7 +325,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["Ledger"],
+                            "sheetId": sheet_map[SHEET_LEDGER],
                             "startRowIndex": 0,
                             "endRowIndex": 1,
                         },
@@ -335,14 +340,14 @@ class GoogleSheetsManager:
                 },
                 {
                     "updateSheetProperties": {
-                        "properties": {"sheetId": sheet_map["Ledger"], "gridProperties": {"frozenRowCount": 1}},
+                        "properties": {"sheetId": sheet_map[SHEET_LEDGER], "gridProperties": {"frozenRowCount": 1}},
                         "fields": "gridProperties.frozenRowCount",
                     }
                 },
                 {
                     "updateDimensionProperties": {
                         "range": {
-                            "sheetId": sheet_map["Ledger"],
+                            "sheetId": sheet_map[SHEET_LEDGER],
                             "dimension": "COLUMNS",
                             "startIndex": 0,
                             "endIndex": 7,
@@ -354,7 +359,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["Ledger"],
+                            "sheetId": sheet_map[SHEET_LEDGER],
                             "startColumnIndex": 0,
                             "endColumnIndex": 1,
                             "startRowIndex": 1,
@@ -373,7 +378,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["P&L Summary"],
+                            "sheetId": sheet_map[SHEET_PNL],
                             "startRowIndex": 0,
                             "endRowIndex": 2,
                         },
@@ -389,7 +394,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["Dashboard"],
+                            "sheetId": sheet_map[SHEET_DASHBOARD],
                             "startRowIndex": 0,
                             "endRowIndex": 1,
                         },
@@ -405,7 +410,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["Dashboard"],
+                            "sheetId": sheet_map[SHEET_DASHBOARD],
                             "startColumnIndex": 1,
                             "endColumnIndex": 2,
                             "startRowIndex": 1,
@@ -425,7 +430,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["Dashboard"],
+                            "sheetId": sheet_map[SHEET_DASHBOARD],
                             "startColumnIndex": 1,
                             "endColumnIndex": 2,
                             "startRowIndex": 2,
@@ -445,7 +450,7 @@ class GoogleSheetsManager:
                 {
                     "repeatCell": {
                         "range": {
-                            "sheetId": sheet_map["Dashboard"],
+                            "sheetId": sheet_map[SHEET_DASHBOARD],
                             "startColumnIndex": 1,
                             "endColumnIndex": 2,
                             "startRowIndex": 3,
@@ -468,8 +473,8 @@ class GoogleSheetsManager:
             spreadsheetId=spreadsheet_id,
             body=requests_body,
         ).execute()
-        self.format_currency_column(spreadsheet_id, sheet_map["Ledger"], 3, 4)
-        self.format_currency_column(spreadsheet_id, sheet_map["P&L Summary"], 1, 2)
+        self.format_currency_column(spreadsheet_id, sheet_map[SHEET_LEDGER], 3, 4)
+        self.format_currency_column(spreadsheet_id, sheet_map[SHEET_PNL], 1, 2)
         return {"ok": True}
 
     @staticmethod

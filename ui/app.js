@@ -19,9 +19,15 @@ function esc(v) {
     .replace(/"/g, '&quot;');
 }
 
+var USD_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+
 /** Format a number as USD currency */
-function fmt(v) {
-  return new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(v);
+function fmt(v) { return USD_FMT.format(Number(v) || 0); }
+
+/** Format a number as signed USD (e.g. +$500.00 / -$500.00) */
+function fmtSigned(v) {
+  var n = Number(v || 0);
+  return (n >= 0 ? '+' : '-') + USD_FMT.format(Math.abs(n));
 }
 
 /* ----------------------------------------------------------
@@ -144,15 +150,14 @@ function fetchBalanceSheet() {
   fetch('/api/balance-sheet' + qs)
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      function fmtUSD(v) { return '$' + Number(v || 0).toFixed(2); }
       function setText(id, v) { var el = document.getElementById(id); if (el) { el.textContent = v; } }
-      setText('bs-cash',                fmtUSD(data.assets  && data.assets.cash));
-      setText('bs-accounts-receivable', fmtUSD(data.assets  && data.assets.accounts_receivable));
-      setText('bs-assets',              fmtUSD(data.assets  && data.assets.total));
-      setText('bs-accounts-payable',    fmtUSD(data.liabilities && data.liabilities.accounts_payable));
-      setText('bs-liabilities',         fmtUSD(data.liabilities && data.liabilities.total));
-      setText('bs-retained-earnings',   fmtUSD(data.equity  && data.equity.retained_earnings));
-      setText('bs-equity',              fmtUSD(data.equity  && data.equity.total));
+      setText('bs-cash',                fmt(data.assets  && data.assets.cash));
+      setText('bs-accounts-receivable', fmt(data.assets  && data.assets.accounts_receivable));
+      setText('bs-assets',              fmt(data.assets  && data.assets.total));
+      setText('bs-accounts-payable',    fmt(data.liabilities && data.liabilities.accounts_payable));
+      setText('bs-liabilities',         fmt(data.liabilities && data.liabilities.total));
+      setText('bs-retained-earnings',   fmt(data.equity  && data.equity.retained_earnings));
+      setText('bs-equity',              fmt(data.equity  && data.equity.total));
       setText('bs-balance-check',       data.balanced ? '✓ Balanced' : '✗ Not balanced');
       setText('bs-note', data.approximate ? 'AR/AP data not yet available — Balance Sheet is approximate.' : '');
       var out = document.getElementById('balance-sheet-output');
@@ -172,7 +177,6 @@ function fetchCashFlow() {
   fetch('/api/cash-flow' + qs)
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      function fmtSigned(v) { var n = Number(v || 0); return (n >= 0 ? '+' : '') + '$' + n.toFixed(2); }
       function setText(id, v) { var el = document.getElementById(id); if (el) { el.textContent = v; } }
       setText('cf-operating', fmtSigned(data.operating));
       setText('cf-investing',  fmtSigned(data.investing));
@@ -332,6 +336,26 @@ function fetchArAp() {
     .catch(function (err) { showToast('AR/AP error: ' + err, 'error'); });
 }
 
+function renderMarkPaidButton(id, type) {
+  var btn = document.createElement('button');
+  btn.textContent = 'Mark Paid';
+  btn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
+  btn.addEventListener('click', function () {
+    fetch('/api/ar-ap/' + id + '/mark-paid', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ type: type, paid_date: new Date().toISOString().slice(0, 10) })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (d) {
+        if (d.ok) { showToast('Entry marked as paid', 'success'); fetchArAp(); }
+        else { showToast('Failed to mark as paid: ' + (d.detail || 'Unknown error'), 'error'); }
+      })
+      .catch(function (err) { showToast('Error marking as paid: ' + err, 'error'); });
+  });
+  return btn;
+}
+
 function renderArAp(data) {
   var receivablesBody = document.getElementById('ar-ap-receivables-body');
   var payablesBody = document.getElementById('ar-ap-payables-body');
@@ -359,7 +383,7 @@ function renderArAp(data) {
   // Dashboard summary cards
   var openReceivables = receivables.filter(function (r) { return r.status === 'open'; });
   var openArTotal = openReceivables.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
-  var overdueArCount = receivables.filter(function (r) { return r.days_outstanding > 0 && r.status === 'open'; }).length;
+  var overdueArCount = overdueReceivables.length;
   var upcomingApCount = payables.filter(function (p) { return p.days_outstanding >= -7 && p.days_outstanding <= 0 && p.status === 'open'; }).length;
   var dashArOpenTotal = document.getElementById('dash-ar-open-total');
   var dashArOverdue = document.getElementById('dash-ar-overdue');
@@ -393,36 +417,8 @@ function renderArAp(data) {
         tr.appendChild(td);
       });
 
-      // Actions
       var actionsTd = document.createElement('td');
-      if (r.status === 'open') {
-        var markPaidBtn = document.createElement('button');
-        markPaidBtn.textContent = 'Mark Paid';
-        markPaidBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
-        markPaidBtn.addEventListener('click', function () {
-          // Call API to mark as paid
-          fetch('/api/ar-ap/' + r.id + '/mark-paid', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'receivable',
-              paid_date: new Date().toISOString().slice(0, 10)
-            })
-          })
-            .then(function (response) { return response.json(); })
-            .then(function (data) {
-              if (data.ok) {
-                showToast('Entry marked as paid', 'success');
-                // Refresh the AR/AP list
-                fetchArAp();
-              } else {
-                showToast('Failed to mark as paid: ' + (data.detail || 'Unknown error'), 'error');
-              }
-            })
-            .catch(function (err) { showToast('Error marking as paid: ' + err, 'error'); });
-        });
-        actionsTd.appendChild(markPaidBtn);
-      }
+      if (r.status === 'open') { actionsTd.appendChild(renderMarkPaidButton(r.id, 'receivable')); }
       tr.appendChild(actionsTd);
       receivablesBody.appendChild(tr);
     });
@@ -453,36 +449,8 @@ function renderArAp(data) {
         tr.appendChild(td);
       });
 
-      // Actions
       var actionsTd = document.createElement('td');
-      if (p.status === 'open') {
-        var markPaidBtn = document.createElement('button');
-        markPaidBtn.textContent = 'Mark Paid';
-        markPaidBtn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
-        markPaidBtn.addEventListener('click', function () {
-          // Call API to mark as paid
-          fetch('/api/ar-ap/' + p.id + '/mark-paid', {
-            method: 'PUT',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              type: 'payable',
-              paid_date: new Date().toISOString().slice(0, 10)
-            })
-          })
-            .then(function (response) { return response.json(); })
-            .then(function (data) {
-              if (data.ok) {
-                showToast('Entry marked as paid', 'success');
-                // Refresh the AR/AP list
-                fetchArAp();
-              } else {
-                showToast('Failed to mark as paid: ' + (data.detail || 'Unknown error'), 'error');
-              }
-            })
-            .catch(function (err) { showToast('Error marking as paid: ' + err, 'error'); });
-        });
-        actionsTd.appendChild(markPaidBtn);
-      }
+      if (p.status === 'open') { actionsTd.appendChild(renderMarkPaidButton(p.id, 'payable')); }
       tr.appendChild(actionsTd);
       payablesBody.appendChild(tr);
     });
@@ -627,7 +595,6 @@ function initArAp() {
         return;
       }
 
-      // Call API to create AR/AP entry
       fetch('/api/ar-ap', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -643,12 +610,10 @@ function initArAp() {
         .then(function (data) {
           if (data.ok) {
             showToast('Entry added successfully', 'success');
-            // Clear form
             clientVendorInput.value = '';
             amountInput.value = '';
             dueDateInput.value = '';
             notesInput.value = '';
-            // Refresh the AR/AP list
             fetchArAp();
           } else {
             showToast('Failed to add entry: ' + (data.detail || 'Unknown error'), 'error');
@@ -1523,6 +1488,19 @@ function initTransactionForm() {
    19. P&L Report
    ---------------------------------------------------------- */
 
+function renderReportRows(tbody, rows) {
+  tbody.textContent = '';
+  rows.forEach(function (row) {
+    var tr = document.createElement('tr');
+    [row.date || '', row.description || '', row.category || '', fmt(row.amount || 0)].forEach(function (col) {
+      var td = document.createElement('td');
+      td.textContent = col;
+      tr.appendChild(td);
+    });
+    tbody.appendChild(tr);
+  });
+}
+
 function initReports() {
   var generateBtn = document.getElementById('generate-report-btn');
   if (generateBtn) {
@@ -1537,41 +1515,11 @@ function initReports() {
           if (!reportOutput) { return; }
           reportOutput.classList.remove('hidden');
 
-          // Income rows
-          if (incomeBody) {
-            incomeBody.textContent = '';
-            var incRows = data.income || [];
-            incRows.forEach(function (row) {
-              var tr = document.createElement('tr');
-              [row.date || '', row.description || '', row.category || '', fmt(row.amount || 0)].forEach(function (col) {
-                var td = document.createElement('td');
-                td.textContent = col;
-                tr.appendChild(td);
-              });
-              incomeBody.appendChild(tr);
-            });
-          }
-          if (incomeTotalCell) {
-            incomeTotalCell.textContent = fmt(data.income_total || 0);
-          }
+          if (incomeBody) { renderReportRows(incomeBody, data.income || []); }
+          if (incomeTotalCell) { incomeTotalCell.textContent = fmt(data.income_total || 0); }
 
-          // Expense rows
-          if (expenseBody) {
-            expenseBody.textContent = '';
-            var expRows = data.expenses || [];
-            expRows.forEach(function (row) {
-              var tr = document.createElement('tr');
-              [row.date || '', row.description || '', row.category || '', fmt(row.amount || 0)].forEach(function (col) {
-                var td = document.createElement('td');
-                td.textContent = col;
-                tr.appendChild(td);
-              });
-              expenseBody.appendChild(tr);
-            });
-          }
-          if (expenseTotalCell) {
-            expenseTotalCell.textContent = fmt(data.expense_total || 0);
-          }
+          if (expenseBody) { renderReportRows(expenseBody, data.expenses || []); }
+          if (expenseTotalCell) { expenseTotalCell.textContent = fmt(data.expense_total || 0); }
 
           // Net profit
           var netVal = (data.income_total || 0) - (data.expense_total || 0);
