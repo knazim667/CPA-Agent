@@ -24,26 +24,54 @@ class IRSDeadline:
     year: int
 
 
+# IRS thresholds — update each January
+MILEAGE_RATE_2024 = 0.67   # per mile
+MILEAGE_RATE_2025 = 0.70   # per mile
+SECTION_179_LIMIT_2024 = 1_220_000
+SECTION_179_LIMIT_2025 = 1_250_000
+DE_MINIMIS_THRESHOLD = 2_500
+QBI_DEDUCTION_RATE = 0.20   # 20% of qualified business income (pass-through entities)
+FORM_1099_NEC_THRESHOLD = 600
+FICA_SS_WAGE_BASE_2025 = 176_100
+
+
 class TaxEngine:
     def __init__(self, memory_manager):
         self.memory = memory_manager
 
     def compute_se_tax(self, net_income: float) -> float:
-        """
-        Compute self-employment tax: 15.3% of 92.35% of net income
-        """
+        """SE tax = 15.3% applied to 92.35% of net income (the deductible portion)."""
         if net_income <= 0:
             return 0.0
         return net_income * 0.9235 * 0.153
 
-    # 2026 single-filer brackets: (width, rate)
+    def compute_se_tax_deduction(self, net_income: float) -> float:
+        """Half of SE tax is deductible on Schedule 1 line 15."""
+        return self.compute_se_tax(net_income) / 2.0
+
+    def compute_qbi_deduction(self, net_income: float) -> float:
+        """20% QBI deduction for pass-through entities (subject to income limits)."""
+        if net_income <= 0:
+            return 0.0
+        return net_income * QBI_DEDUCTION_RATE
+
+    def mileage_deduction(self, miles: float, year: int = 2025) -> float:
+        """Convert business miles to dollar deduction using IRS standard mileage rate."""
+        rate = MILEAGE_RATE_2025 if year >= 2025 else MILEAGE_RATE_2024
+        return miles * rate
+
+    def should_capitalize(self, amount: float) -> bool:
+        """Return True if an asset purchase must be capitalized (above de minimis threshold)."""
+        return amount >= DE_MINIMIS_THRESHOLD
+
+    # 2025 single-filer brackets: (width, rate)
     _FEDERAL_BRACKETS = [
-        (11_600,              0.10),
-        (47_300  - 11_600,   0.12),
-        (95_375  - 47_300,   0.22),
-        (182_100 - 95_375,   0.24),
-        (231_250 - 182_100,  0.32),
-        (578_125 - 231_250,  0.35),
+        (11_925,              0.10),
+        (48_475  - 11_925,   0.12),
+        (103_350 - 48_475,   0.22),
+        (197_300 - 103_350,  0.24),
+        (250_525 - 197_300,  0.32),
+        (626_350 - 250_525,  0.35),
         (float("inf"),        0.37),
     ]
 
@@ -181,7 +209,11 @@ class TaxEngine:
 
         net_income = total_income - total_expenses
         se_tax = self.compute_se_tax(net_income)
-        federal_tax = self.compute_estimated_federal(net_income)
+        se_deduction = self.compute_se_tax_deduction(net_income)
+        qbi_deduction = self.compute_qbi_deduction(net_income - se_deduction)
+        # Taxable income after SE deduction and QBI deduction
+        taxable_income = max(net_income - se_deduction - qbi_deduction, 0.0)
+        federal_tax = self.compute_estimated_federal(taxable_income)
         total_tax = se_tax + federal_tax
 
         return {
@@ -189,7 +221,10 @@ class TaxEngine:
             "total_expenses": round(total_expenses, 2),
             "net_income": round(net_income, 2),
             "se_tax": round(se_tax, 2),
+            "se_tax_deduction": round(se_deduction, 2),
+            "qbi_deduction": round(qbi_deduction, 2),
+            "taxable_income": round(taxable_income, 2),
             "federal_tax": round(federal_tax, 2),
             "total_tax": round(total_tax, 2),
-            "estimated_quarterly_payment": round(total_tax / 4, 2)
+            "estimated_quarterly_payment": round(total_tax / 4, 2),
         }

@@ -4,6 +4,8 @@ import uuid
 from collections import Counter
 from typing import Any
 
+from skills.chart_of_accounts import classify_transaction as _coa_classify
+
 
 class CategorizationEngine:
     def __init__(self, rules_data: dict[str, Any] | None = None) -> None:
@@ -13,19 +15,29 @@ class CategorizationEngine:
         return {"rules": list(self._rules)}
 
     def suggest_category(self, description: str) -> dict[str, Any] | None:
+        """Return the best category match using learned rules first, then COA fallback."""
         desc_lower = description.lower()
         best: dict[str, Any] | None = None
         for rule in self._rules:
             if rule["pattern"] in desc_lower:
                 if best is None or rule.get("confidence", 0) > best.get("confidence", 0):
                     best = rule
-        if best is None:
-            return None
-        return {
-            "category": best["category"],
-            "confidence": best.get("confidence", 0.8),
-            "rule_id": best["id"],
-        }
+        if best is not None:
+            return {
+                "category": best["category"],
+                "confidence": best.get("confidence", 0.8),
+                "rule_id": best["id"],
+            }
+        # COA fallback: deterministic classification based on account/keyword rules
+        coa_match = _coa_classify(description)
+        if coa_match is not None:
+            return {
+                "category": coa_match["account_name"],
+                "confidence": coa_match["confidence"],
+                "ledger_type": coa_match["ledger_type"],
+                "note": coa_match["note"],
+            }
+        return None
 
     def save_rule(self, description: str, category: str) -> dict[str, Any]:
         pattern = description.strip().lower()
