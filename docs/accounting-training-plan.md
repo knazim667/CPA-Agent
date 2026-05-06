@@ -19,10 +19,9 @@
 
 ---
 
-## Phase 1 — System Prompt Additions (No Code Needed)
+## Phase 1 — System Prompt Additions ✅ COMPLETED 2026-05-05
 
-**File to update:** `persona/system_prompt.md`
-**Estimated effort:** ~1 hour
+**File updated:** `persona/system_prompt.md`
 **Impact:** Immediate — agent gets smarter without any new code
 
 Knowledge to add from the source document:
@@ -234,12 +233,12 @@ Line 8:  Taxable income per return:         $XX,XXX
 ## Execution Order
 
 ```
-TODAY (Phase 1)     → Update system_prompt.md with accrual, M-1, payroll trust fund, inventory method, recapture rules
-NEXT SESSION        → Build skills/depreciation_engine.py (Phase 2)
-AFTER THAT          → Build skills/inventory_engine.py (Phase 3) — only if business sells physical goods
-THEN                → Update skills/payroll_engine.py pre-tax deductions (Phase 4)
-BEFORE TAX SEASON   → Build skills/m1_reconciler.py (Phase 5)
-LATER               → Transaction splitting (Phase 6)
+✅ Phase 1 (DONE)   → system_prompt.md — accrual, M-1, trust fund, inventory method, recapture, inter-company rules
+▶ Phase 2 (NEXT)   → Build skills/depreciation_engine.py
+   Phase 3          → Build skills/inventory_engine.py (only if business sells physical goods)
+   Phase 4          → Update skills/payroll_engine.py pre-tax deductions (401k, Section 125)
+   Phase 5          → Build skills/m1_reconciler.py (before tax season)
+   Phase 6          → Transaction splitting support
 ```
 
 ---
