@@ -1,3 +1,18 @@
+/* 401 interceptor — redirect to /login on any unauthenticated API response */
+(function () {
+  var _origFetch = window.fetch;
+  window.fetch = function () {
+    return _origFetch.apply(this, arguments).then(function (r) {
+      if (r.status === 401 &&
+          !r.url.includes('/api/auth/') &&
+          !r.url.includes('/login')) {
+        window.location.href = '/login';
+      }
+      return r;
+    });
+  };
+}());
+
 /* ============================================================
    CPA-Agent — ui/app.js
    Tab router, toast system, and all UI capabilities (Task 14)
@@ -63,6 +78,7 @@ var isListening = false;
 var latestPresentation = null;
 var seenAlertDeadlines = new Set();
 var MAX_SEEN_ALERTS = 50;
+var currentUserRole = null;
 
 /* ----------------------------------------------------------
    4. DOM element references (populated after DOMContentLoaded)
@@ -748,6 +764,7 @@ function initTabs() {
       if (tab === 'ar-ap') { fetchArAp(); }
       if (tab === 'reconcile') { /* upload handled via form */ }
       if (tab === 'tax') { fetchTax(); }
+      if (tab === 'users') { fetchUsers(); }
       updateContextChip(tab);
     });
   });
@@ -1807,6 +1824,9 @@ function initChat() {
           var utt = new SpeechSynthesisUtterance(data.message);
           window.speechSynthesis.speak(utt);
         }
+
+        /* Refresh dashboard metrics once after each response */
+        fetchStatus();
       })
       .catch(function (err) {
         appendMessage('agent', 'Error: ' + err, null);
@@ -1909,6 +1929,198 @@ function fetchStatus() {
 }
 
 /* ----------------------------------------------------------
+   Auth — load current user, hide admin-only UI for non-owners
+   ---------------------------------------------------------- */
+function initAuth() {
+  fetch('/api/auth/me')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      currentUserRole = data.user && data.user.role;
+      if (currentUserRole !== 'owner') {
+        var adminGroup = document.getElementById('admin-group-label');
+        var usersLink  = document.getElementById('users-tab-link');
+        var profileLink = document.getElementById('profile-tab-link');
+        if (adminGroup)  { adminGroup.style.display  = 'none'; }
+        if (usersLink)   { usersLink.style.display   = 'none'; }
+        if (profileLink) { profileLink.style.display = 'none'; }
+      }
+    })
+    .catch(function () {});
+
+  var logoutBtn = document.getElementById('logout-btn');
+  if (logoutBtn) {
+    logoutBtn.addEventListener('click', function () {
+      fetch('/api/auth/logout', { method: 'POST' })
+        .then(function () { window.location.href = '/login'; });
+    });
+  }
+}
+
+/* ----------------------------------------------------------
+   User Management tab (owner only)
+   ---------------------------------------------------------- */
+function fetchUsers() {
+  fetch('/api/users')
+    .then(function (r) {
+      if (r.status === 403) { return null; }
+      return r.json();
+    })
+    .then(function (data) {
+      if (!data) { return; }
+      var tbody = document.getElementById('users-body');
+      if (!tbody) { return; }
+      tbody.innerHTML = '';
+      data.users.forEach(function (u) {
+        var tr = document.createElement('tr');
+        var bizAccess = (u.role === 'owner') ? 'All businesses' :
+          (u.business_keys && u.business_keys.length ? u.business_keys.join(', ') : 'None assigned');
+        tr.innerHTML =
+          '<td>' + escapeHtml(u.username) + '</td>' +
+          '<td>' + escapeHtml(u.email) + '</td>' +
+          '<td><span class="role-badge role-' + u.role + '">' + u.role + '</span></td>' +
+          '<td>' + (u.is_active
+            ? '<span style="color:#10b981">Active</span>'
+            : '<span style="color:#f87171">Inactive</span>') + '</td>' +
+          '<td>' + escapeHtml(bizAccess) + '</td>' +
+          '<td>' +
+            '<button class="btn-sm" onclick="openEditUser(' + u.id + ')">Edit</button>' +
+            (u.is_active
+              ? ' <button class="btn-sm btn-danger" onclick="deactivateUser(' + u.id + ')">Disable</button>'
+              : '') +
+          '</td>';
+        tbody.appendChild(tr);
+      });
+    });
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+function openAddUser() {
+  document.getElementById('user-modal-title').textContent = 'Add User';
+  document.getElementById('user-modal-id').value = '';
+  document.getElementById('user-modal-username').value = '';
+  document.getElementById('user-modal-email').value = '';
+  document.getElementById('user-modal-password').value = '';
+  document.getElementById('user-modal-pw-hint').textContent = '';
+  document.getElementById('user-modal-role').value = 'bookkeeper';
+  document.getElementById('user-modal-error').textContent = '';
+  populateBusinessCheckboxes([]);
+  document.getElementById('user-modal').classList.remove('hidden');
+}
+
+function openEditUser(userId) {
+  fetch('/api/users')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      var u = data.users.find(function (x) { return x.id === userId; });
+      if (!u) { return; }
+      document.getElementById('user-modal-title').textContent = 'Edit User';
+      document.getElementById('user-modal-id').value = u.id;
+      document.getElementById('user-modal-username').value = u.username;
+      document.getElementById('user-modal-email').value = u.email;
+      document.getElementById('user-modal-password').value = '';
+      document.getElementById('user-modal-pw-hint').textContent = '(leave blank to keep current)';
+      document.getElementById('user-modal-role').value = u.role;
+      document.getElementById('user-modal-error').textContent = '';
+      populateBusinessCheckboxes(u.business_keys || []);
+      document.getElementById('user-modal').classList.remove('hidden');
+    });
+}
+
+function populateBusinessCheckboxes(selected) {
+  var container = document.getElementById('user-modal-businesses');
+  if (!container) { return; }
+  container.innerHTML = '';
+  fetch('/api/status')
+    .then(function (r) { return r.json(); })
+    .then(function (data) {
+      (data.businesses || []).forEach(function (biz) {
+        var label = document.createElement('label');
+        label.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer';
+        var cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.value = biz.key;
+        if (selected.indexOf(biz.key) !== -1) { cb.checked = true; }
+        label.appendChild(cb);
+        label.appendChild(document.createTextNode(biz.business_name));
+        container.appendChild(label);
+      });
+    });
+}
+
+function deactivateUser(userId) {
+  if (!confirm('Disable this user? They will no longer be able to log in.')) { return; }
+  fetch('/api/users/' + userId, { method: 'DELETE' })
+    .then(function (r) { return r.json(); })
+    .then(function () { fetchUsers(); });
+}
+
+function initUsers() {
+  var addBtn = document.getElementById('add-user-btn');
+  if (addBtn) { addBtn.addEventListener('click', openAddUser); }
+
+  var cancelBtn = document.getElementById('user-modal-cancel');
+  if (cancelBtn) {
+    cancelBtn.addEventListener('click', function () {
+      document.getElementById('user-modal').classList.add('hidden');
+    });
+  }
+
+  var saveBtn = document.getElementById('user-modal-save');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function () {
+      var errEl = document.getElementById('user-modal-error');
+      errEl.textContent = '';
+      var userId   = document.getElementById('user-modal-id').value;
+      var role     = document.getElementById('user-modal-role').value;
+      var bizKeys  = Array.from(
+        document.querySelectorAll('#user-modal-businesses input[type=checkbox]:checked')
+      ).map(function (cb) { return cb.value; });
+
+      if (userId) {
+        /* Edit existing */
+        fetch('/api/users/' + userId, {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ role: role, business_keys: bizKeys }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d.ok) { errEl.textContent = d.detail || 'Error saving.'; return; }
+            document.getElementById('user-modal').classList.add('hidden');
+            fetchUsers();
+          });
+      } else {
+        /* Create new */
+        var username = document.getElementById('user-modal-username').value.trim();
+        var email    = document.getElementById('user-modal-email').value.trim();
+        var password = document.getElementById('user-modal-password').value;
+        if (!username || !email || !password) {
+          errEl.textContent = 'Username, email, and password are required.'; return;
+        }
+        fetch('/api/users', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username: username, email: email, password: password, role: role, business_keys: bizKeys }),
+        })
+          .then(function (r) { return r.json(); })
+          .then(function (d) {
+            if (!d.ok) { errEl.textContent = d.detail || 'Error creating user.'; return; }
+            document.getElementById('user-modal').classList.add('hidden');
+            fetchUsers();
+          });
+      }
+    });
+  }
+}
+
+/* ----------------------------------------------------------
    DOMContentLoaded — wire everything up
    ---------------------------------------------------------- */
 
@@ -1993,9 +2205,10 @@ document.addEventListener('DOMContentLoaded', function () {
   initArAp();
   initTax();
   configureVoice();
+  initAuth();
+  initUsers();
 
-  /* Initial data load + live 5-second poll */
+  /* Initial data load */
   fetchStatus();
   fetchRecurring();
-  setInterval(fetchStatus, 5000);
 });

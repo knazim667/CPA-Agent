@@ -118,8 +118,13 @@
         <div class="sidebar-group-label">TOOLS</div>
         <a class="sidebar-item" href="javascript:void(0)" data-tab="documents">Documents</a>
 
+        <div class="sidebar-group-label" id="admin-group-label">ADMIN</div>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="users" id="users-tab-link">Users</a>
+        <a class="sidebar-item" href="javascript:void(0)" data-tab="profile" id="profile-tab-link">Business Profile</a>
+
         <div class="sidebar-spacer"></div>
         <button id="settings-open-sidebar" class="sidebar-settings-btn" aria-label="Settings">&#9881; Settings</button>
+        <button id="logout-btn" class="sidebar-settings-btn" style="color:#f87171;margin-top:.5rem">&#x2715; Logout</button>
       </nav>
 
       <!-- Main content -->
@@ -651,6 +656,54 @@
             </div>
           </div>
 
+        </section>
+
+        <!-- Users tab -->
+        <section id="tab-users" class="tab-content hidden">
+          <h2 class="section-title">User Management</h2>
+          <button id="add-user-btn" class="btn-primary" style="margin-bottom:1.5rem">+ Add User</button>
+          <div class="table-wrapper">
+            <table class="data-table" id="users-table">
+              <thead>
+                <tr>
+                  <th>Username</th>
+                  <th>Email</th>
+                  <th>Role</th>
+                  <th>Status</th>
+                  <th>Business Access</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="users-body"></tbody>
+            </table>
+          </div>
+
+          <!-- Add/Edit User Modal -->
+          <div id="user-modal" class="modal-overlay hidden">
+            <div class="modal-box">
+              <h3 id="user-modal-title">Add User</h3>
+              <input type="hidden" id="user-modal-id"/>
+              <label class="form-label">Username</label>
+              <input id="user-modal-username" type="text" class="modal-input"/>
+              <label class="form-label">Email</label>
+              <input id="user-modal-email" type="email" class="modal-input"/>
+              <label class="form-label">Password <span id="user-modal-pw-hint" style="color:#94a3b8;font-size:.8rem"></span></label>
+              <input id="user-modal-password" type="password" class="modal-input" minlength="8"/>
+              <label class="form-label">Role</label>
+              <select id="user-modal-role" class="modal-input">
+                <option value="owner">Owner</option>
+                <option value="bookkeeper">Bookkeeper</option>
+                <option value="employee">Employee</option>
+              </select>
+              <label class="form-label">Business Access (for bookkeeper / employee)</label>
+              <div id="user-modal-businesses" style="margin-bottom:1rem"></div>
+              <div class="modal-actions">
+                <button id="user-modal-cancel" class="btn-secondary">Cancel</button>
+                <button id="user-modal-save" class="btn-primary">Save</button>
+              </div>
+              <p id="user-modal-error" style="color:#f87171;margin-top:.5rem;min-height:1.2em"></p>
+            </div>
+          </div>
         </section>
 
         <button id="ai-panel-toggle" class="ai-panel-toggle" aria-label="Toggle AI panel">&#10094; AI</button>
