@@ -22,7 +22,7 @@ if os.environ.get("SECRET_KEY", "dev-insecure-key") == "dev-insecure-key":
     )
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, RedirectResponse, Response
+from fastapi.responses import FileResponse, RedirectResponse, Response, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 from starlette.middleware.sessions import SessionMiddleware
@@ -30,6 +30,7 @@ from starlette.middleware.sessions import SessionMiddleware
 from auth import UserManager, get_current_user, require_owner, require_owner_or_bookkeeper
 from main import CPAAgent
 from skills import DocumentProcessor
+from skills.pdf_exporter import generate_table_pdf
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -439,7 +440,6 @@ def report_pl(from_date: str = "", to_date: str = "", current_user: dict = Depen
 
 @app.get("/api/export/csv")
 def export_csv(from_date: str = "", to_date: str = "", current_user: dict = Depends(require_owner_or_bookkeeper)):
-    from fastapi.responses import StreamingResponse
     with agent_lock:
         profile = agent.memory.get_current_business()
         if not profile.get("google_sheet_id"):
@@ -457,6 +457,84 @@ def export_csv(from_date: str = "", to_date: str = "", current_user: dict = Depe
         today = time.strftime("%Y-%m-%d")
         filename = f"{agent.memory.current_business_key}-ledger-{today}.csv"
     return StreamingResponse(iter([output.getvalue()]), media_type="text/csv", headers={"Content-Disposition": f"attachment; filename={filename}"})
+
+
+@app.get("/api/export/ledger/pdf")
+def export_ledger_pdf(
+    from_date: str = "",
+    to_date: str = "",
+    current_user: dict = Depends(require_owner_or_bookkeeper),
+):
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            raise HTTPException(status_code=400, detail="No ledger connected.")
+        rows = agent.sheets.read_range(
+            spreadsheet_id=profile["google_sheet_id"], range_name="Ledger!A1:G"
+        )
+        data_rows = rows[1:] if rows and len(rows[0]) >= len(agent.LEDGER_HEADERS) and rows[0][:len(agent.LEDGER_HEADERS)] == agent.LEDGER_HEADERS else rows
+        if from_date or to_date:
+            data_rows = [
+                r for r in data_rows
+                if (not from_date or str(r[0]).strip() >= from_date)
+                and (not to_date or str(r[0]).strip() <= to_date)
+            ]
+        norm = [agent._normalize_row(r) for r in data_rows]
+        subtitle = f"{from_date or 'start'} — {to_date or 'today'}" if (from_date or to_date) else ""
+        pdf_bytes = generate_table_pdf(
+            title="General Ledger",
+            headers=agent.LEDGER_HEADERS,
+            rows=norm,
+            business_name=profile.get("business_name", ""),
+            subtitle=subtitle,
+        )
+    today = time.strftime("%Y-%m-%d")
+    filename = f"{agent.memory.current_business_key}-ledger-{today}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
+
+
+@app.get("/api/export/pl/pdf")
+def export_pl_pdf(
+    from_date: str = "",
+    to_date: str = "",
+    current_user: dict = Depends(require_owner_or_bookkeeper),
+):
+    with agent_lock:
+        profile = agent.memory.get_current_business()
+        if not profile.get("google_sheet_id"):
+            raise HTTPException(status_code=400, detail="No ledger connected.")
+        rows = agent.sheets.read_range(
+            spreadsheet_id=profile["google_sheet_id"], range_name="Ledger!A1:G"
+        )
+        data_rows = rows[1:] if rows and len(rows[0]) >= len(agent.LEDGER_HEADERS) and rows[0][:len(agent.LEDGER_HEADERS)] == agent.LEDGER_HEADERS else rows
+        if from_date or to_date:
+            data_rows = [
+                r for r in data_rows
+                if (not from_date or str(r[0]).strip() >= from_date)
+                and (not to_date or str(r[0]).strip() <= to_date)
+            ]
+        income_rows = [[r[2], f"${agent._safe_float(r[3]):.2f}"] for r in data_rows if len(r) >= 5 and str(r[4]).strip().lower() == "income"]
+        expense_rows = [[r[2], f"${agent._safe_float(r[3]):.2f}"] for r in data_rows if len(r) >= 5 and str(r[4]).strip().lower() != "income"]
+        all_rows = [["INCOME", ""]] + income_rows + [["EXPENSES", ""]] + expense_rows
+        subtitle = f"{from_date or 'start'} — {to_date or 'today'}"
+        pdf_bytes = generate_table_pdf(
+            title="Profit & Loss",
+            headers=["Category", "Amount"],
+            rows=all_rows,
+            business_name=profile.get("business_name", ""),
+            subtitle=subtitle,
+        )
+    today = time.strftime("%Y-%m-%d")
+    filename = f"{agent.memory.current_business_key}-pl-{today}.pdf"
+    return StreamingResponse(
+        iter([pdf_bytes]),
+        media_type="application/pdf",
+        headers={"Content-Disposition": f"attachment; filename={filename}"},
+    )
 
 
 @app.get("/api/ledger")

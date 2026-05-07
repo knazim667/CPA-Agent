@@ -1580,6 +1580,24 @@ function initReports() {
       window.location.href = '/api/export/csv?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
     });
   }
+
+  /* 20b. PDF exports */
+  var ledgerPdfBtn = document.getElementById('ledger-pdf-btn');
+  if (ledgerPdfBtn) {
+    ledgerPdfBtn.addEventListener('click', function() {
+      var from = (document.getElementById('ledger-from') || {}).value || '';
+      var to   = (document.getElementById('ledger-to')   || {}).value || '';
+      window.location.href = '/api/export/ledger/pdf?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
+    });
+  }
+  var plPdfBtn = document.getElementById('pl-pdf-btn');
+  if (plPdfBtn) {
+    plPdfBtn.addEventListener('click', function() {
+      var from = (document.getElementById('report-from') || {}).value || '';
+      var to   = (document.getElementById('report-to')   || {}).value || '';
+      window.location.href = '/api/export/pl/pdf?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
+    });
+  }
 }
 
 /* ----------------------------------------------------------
