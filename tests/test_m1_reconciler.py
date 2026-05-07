@@ -5,7 +5,6 @@ import sys
 import os
 import pytest
 from pathlib import Path
-from unittest.mock import MagicMock
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'skills'))
@@ -26,6 +25,10 @@ def mm_with_business(tmp_path):
         "default_books_currency": "USD"
     }
     (business_dir / "config.json").write_text(json.dumps(config, indent=2), encoding="utf-8")
+
+    (tmp_path / "active_business.json").write_text(
+        json.dumps({"active_business": "test_biz"}), encoding="utf-8"
+    )
 
     mm = MemoryManager(tmp_path)
     return mm
