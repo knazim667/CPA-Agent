@@ -14,6 +14,8 @@ if not hasattr(_bcrypt, "__about__"):
     _bcrypt.__about__ = type("_About", (), {"__version__": _bcrypt.__version__})()
 
 _pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+_VALID_ROLES = frozenset({"owner", "bookkeeper", "employee"})
+_DUMMY_HASH = _pwd_context.hash("dummy-value-never-used")
 
 
 class UserManager:
@@ -21,8 +23,13 @@ class UserManager:
         self.db_path = Path(db_path)
         self._init_db()
 
+    def _connect(self) -> sqlite3.Connection:
+        conn = sqlite3.connect(self.db_path)
+        conn.execute("PRAGMA foreign_keys = ON")
+        return conn
+
     def _init_db(self) -> None:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -44,7 +51,7 @@ class UserManager:
             conn.commit()
 
     def is_empty(self) -> bool:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             count = conn.execute("SELECT COUNT(*) FROM users").fetchone()[0]
         return count == 0
 
@@ -69,8 +76,12 @@ class UserManager:
         role: str,
         business_keys: list[str] | None = None,
     ) -> dict[str, Any]:
+        if role not in _VALID_ROLES:
+            raise ValueError(f"Invalid role: {role!r}. Must be one of {sorted(_VALID_ROLES)}")
+        if len(password) < 8:
+            raise ValueError("Password must be at least 8 characters")
         password_hash = _pwd_context.hash(password)
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             cursor = conn.execute(
                 "INSERT INTO users (username, email, password_hash, role) VALUES (?, ?, ?, ?)",
                 (username, email, password_hash, role),
@@ -86,7 +97,7 @@ class UserManager:
         return self.get_user_by_id(user_id)
 
     def get_user_by_id(self, user_id: int) -> Optional[dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 "SELECT id, username, email, password_hash, role, is_active, created_at "
                 "FROM users WHERE id = ?",
@@ -95,7 +106,7 @@ class UserManager:
         return self._row_to_user(row) if row else None
 
     def get_user_by_username(self, username: str) -> Optional[dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             row = conn.execute(
                 "SELECT id, username, email, password_hash, role, is_active, created_at "
                 "FROM users WHERE username = ?",
@@ -105,15 +116,16 @@ class UserManager:
 
     def verify_password(self, username: str, password: str) -> Optional[dict[str, Any]]:
         user = self.get_user_by_username(username)
-        if not user or not user["is_active"]:
-            return None
-        if not _pwd_context.verify(password, user["password_hash"]):
+        active = user is not None and user["is_active"]
+        hash_to_check = user["password_hash"] if active else _DUMMY_HASH
+        ok = _pwd_context.verify(password, hash_to_check)
+        if not active or not ok:
             return None
         user.pop("password_hash", None)
         return user
 
     def list_users(self) -> list[dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 "SELECT id, username, email, password_hash, role, is_active, created_at "
                 "FROM users ORDER BY id"
@@ -128,7 +140,9 @@ class UserManager:
         is_active: bool | None = None,
         business_keys: list[str] | None = None,
     ) -> Optional[dict[str, Any]]:
-        with sqlite3.connect(self.db_path) as conn:
+        if role is not None and role not in _VALID_ROLES:
+            raise ValueError(f"Invalid role: {role!r}. Must be one of {sorted(_VALID_ROLES)}")
+        with self._connect() as conn:
             if role is not None:
                 conn.execute("UPDATE users SET role = ? WHERE id = ?", (role, user_id))
             if is_active is not None:
@@ -144,7 +158,7 @@ class UserManager:
         return self.get_user_by_id(user_id)
 
     def get_user_businesses(self, user_id: int) -> list[str]:
-        with sqlite3.connect(self.db_path) as conn:
+        with self._connect() as conn:
             rows = conn.execute(
                 "SELECT business_key FROM user_businesses WHERE user_id = ?", (user_id,)
             ).fetchall()

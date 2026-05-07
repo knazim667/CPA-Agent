@@ -1,5 +1,5 @@
 from __future__ import annotations
-import sqlite3
+import sqlite3 as _sqlite3
 import tempfile
 from pathlib import Path
 import pytest
@@ -25,7 +25,7 @@ def test_create_and_verify_owner(um):
 
 
 def test_wrong_password_returns_none(um):
-    um.create_user("bob", "bob@example.com", "correct", "bookkeeper")
+    um.create_user("bob", "bob@example.com", "correct1", "bookkeeper")
     assert um.verify_password("bob", "wrong") is None
 
 
@@ -34,39 +34,39 @@ def test_unknown_user_returns_none(um):
 
 
 def test_list_users(um):
-    um.create_user("u1", "u1@example.com", "p", "owner")
-    um.create_user("u2", "u2@example.com", "p", "employee")
+    um.create_user("u1", "u1@example.com", "password1", "owner")
+    um.create_user("u2", "u2@example.com", "password1", "employee")
     users = um.list_users()
     assert len(users) == 2
     assert {u["username"] for u in users} == {"u1", "u2"}
 
 
 def test_update_role(um):
-    user = um.create_user("carol", "carol@example.com", "p", "employee")
+    user = um.create_user("carol", "carol@example.com", "password1", "employee")
     updated = um.update_user(user["id"], role="bookkeeper")
     assert updated["role"] == "bookkeeper"
 
 
 def test_deactivate_user(um):
-    user = um.create_user("dave", "dave@example.com", "p", "employee")
+    user = um.create_user("dave", "dave@example.com", "password1", "employee")
     um.update_user(user["id"], is_active=False)
-    assert um.verify_password("dave", "p") is None
+    assert um.verify_password("dave", "password1") is None
 
 
 def test_owner_can_access_any_business(um):
-    user = um.create_user("owner1", "o@example.com", "p", "owner")
+    user = um.create_user("owner1", "o@example.com", "password1", "owner")
     assert um.can_access_business(user, "nazam_llc") is True
     assert um.can_access_business(user, "any_other_biz") is True
 
 
 def test_bookkeeper_limited_to_assigned_businesses(um):
-    user = um.create_user("bk1", "bk@example.com", "p", "bookkeeper",
+    user = um.create_user("bk1", "bk@example.com", "password1", "bookkeeper",
                           business_keys=["nazam_llc"])
     assert um.can_access_business(user, "nazam_llc") is True
     assert um.can_access_business(user, "other_biz") is False
 
 
 def test_duplicate_username_raises(um):
-    um.create_user("dup", "dup@example.com", "p", "owner")
-    with pytest.raises(Exception):
-        um.create_user("dup", "dup2@example.com", "p", "employee")
+    um.create_user("dup", "dup@example.com", "p1111111", "owner")
+    with pytest.raises((_sqlite3.IntegrityError, ValueError)):
+        um.create_user("dup", "dup2@example.com", "p1111111", "employee")
