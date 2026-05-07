@@ -20,6 +20,8 @@ from payroll_engine import (
     _compute_fica_employee,
     _compute_employer_taxes,
     compute_net_pay,
+    calculate_simple_payroll,
+    PayrollCalculation,
 )
 
 
@@ -274,3 +276,22 @@ def test_compute_net_pay_returns_correct_types():
     emp, er = compute_net_pay(gross_pay=5_000)
     assert isinstance(emp, EmployeePayroll)
     assert isinstance(er, EmployerBurden)
+
+
+# ── Task 6: Backward-compat regression tests for calculate_simple_payroll ─────
+
+
+def test_calculate_simple_payroll_unchanged():
+    result = calculate_simple_payroll(3_000)
+    assert isinstance(result, PayrollCalculation)
+    assert result.gross_pay == 3_000
+    assert result.federal_withholding == pytest.approx(360.00, abs=0.01)  # 3000 * 0.12
+    assert result.social_security == pytest.approx(186.00, abs=0.01)      # 3000 * 0.062
+    assert result.medicare == pytest.approx(43.50, abs=0.01)              # 3000 * 0.0145
+    assert result.net_pay == pytest.approx(2_410.50, abs=0.01)            # 3000 - 360 - 186 - 43.50
+
+
+def test_calculate_simple_payroll_custom_rate():
+    result = calculate_simple_payroll(5_000, federal_rate=0.22)
+    assert result.federal_withholding == pytest.approx(1_100.00, abs=0.01)
+    assert result.net_pay == pytest.approx(3_517.50, abs=0.01)            # 5000 - 1100 - 310 - 72.50
