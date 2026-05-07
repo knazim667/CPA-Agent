@@ -769,6 +769,7 @@ function initTabs() {
       if (tab === 'reconcile') { /* upload handled via form */ }
       if (tab === 'tax') { fetchTax(); }
       if (tab === 'users') { fetchUsers(); }
+      if (tab === 'profile') { fetchProfileTab(); }
       updateContextChip(tab);
     });
   });
@@ -2307,6 +2308,95 @@ function initWizard() {
 }
 
 /* ----------------------------------------------------------
+   Business Profile tab
+   ---------------------------------------------------------- */
+function fetchProfileTab() {
+  fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
+    var bizKey = s.active_business_key;
+    return fetch('/api/businesses/' + bizKey + '/profile');
+  }).then(function(r) { return r.json(); }).then(function(d) {
+    if (!d.ok) { return; }
+    var p = d.profile;
+    var set = function(id, val) { var el = document.getElementById(id); if (el && val !== undefined && val !== null) { el.value = val; } };
+    set('prof-name', p.business_name);
+    set('prof-legal-structure', p.legal_structure);
+    set('prof-ein', p.federal_ein);
+    set('prof-state', p.state);
+    set('prof-industry', p.industry);
+    set('prof-business-model', p.business_model);
+    set('prof-accounting-basis', p.accounting_basis);
+    set('prof-fiscal-year', p.fiscal_year_start);
+    set('prof-inventory-method', p.inventory_method);
+    set('prof-currency', p.default_books_currency);
+    if (p.address) {
+      set('prof-street', p.address.street);
+      set('prof-city', p.address.city);
+      set('prof-zip', p.address.zip);
+    }
+    if (p.contact) {
+      set('prof-phone', p.contact.phone);
+      set('prof-email', p.contact.email);
+    }
+  }).catch(function(err) { console.error('fetchProfileTab error:', err); });
+}
+
+function initProfileTab() {
+  var saveBtn = document.getElementById('prof-save-btn');
+  if (saveBtn) {
+    saveBtn.addEventListener('click', function() {
+      fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
+        var bizKey = s.active_business_key;
+        var payload = {
+          business_name: document.getElementById('prof-name').value.trim(),
+          legal_structure: document.getElementById('prof-legal-structure').value,
+          federal_ein: document.getElementById('prof-ein').value.trim(),
+          state: document.getElementById('prof-state').value.trim(),
+          industry: document.getElementById('prof-industry').value,
+          business_model: document.getElementById('prof-business-model').value,
+          accounting_basis: document.getElementById('prof-accounting-basis').value,
+          fiscal_year_start: document.getElementById('prof-fiscal-year').value.trim(),
+          inventory_method: document.getElementById('prof-inventory-method').value,
+          default_books_currency: document.getElementById('prof-currency').value.trim(),
+          address: {
+            street: document.getElementById('prof-street').value.trim(),
+            city: document.getElementById('prof-city').value.trim(),
+            zip: document.getElementById('prof-zip').value.trim(),
+            state: document.getElementById('prof-state').value.trim(),
+            country: 'US',
+          },
+          contact: {
+            phone: document.getElementById('prof-phone').value.trim(),
+            email: document.getElementById('prof-email').value.trim(),
+          },
+        };
+        fetch('/api/businesses/' + bizKey + '/profile', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload),
+        }).then(function(r) { return r.json(); }).then(function(d) {
+          var msg = document.getElementById('prof-save-msg');
+          if (msg) { msg.textContent = d.ok ? 'Saved.' : (d.detail || 'Error saving profile.'); }
+          if (d.ok) { fetchStatus(); }
+        }).catch(function() {
+          var msg = document.getElementById('prof-save-msg');
+          if (msg) { msg.style.color = '#f87171'; msg.textContent = 'Network error.'; }
+        });
+      });
+    });
+  }
+
+  var reopenBtn = document.getElementById('prof-reopen-wizard-btn');
+  if (reopenBtn) {
+    reopenBtn.addEventListener('click', function() {
+      fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
+        onboardingWizardShown = false;
+        openOnboardingWizard(s.active_business_key, s.active_business);
+      });
+    });
+  }
+}
+
+/* ----------------------------------------------------------
    DOMContentLoaded — wire everything up
    ---------------------------------------------------------- */
 
@@ -2394,6 +2484,7 @@ document.addEventListener('DOMContentLoaded', function () {
   initAuth();
   initUsers();
   initWizard();
+  initProfileTab();
 
   /* Initial data load */
   fetchStatus();

@@ -706,6 +706,81 @@
           </div>
         </section>
 
+        <!-- Business Profile tab -->
+        <section id="tab-profile" class="tab-content hidden">
+          <h2 class="section-title">Business Profile</h2>
+          <div class="profile-form">
+            <div class="profile-section">
+              <h3>Identity</h3>
+              <label>Business Name</label><input class="modal-input" id="prof-name" type="text"/>
+              <label>Legal Structure</label>
+              <select class="modal-input" id="prof-legal-structure">
+                <option value="">— Select —</option>
+                <option value="single_member_llc">Single-Member LLC</option>
+                <option value="multi_member_llc">Multi-Member LLC</option>
+                <option value="s_corp">S-Corp Election</option>
+                <option value="partnership">Partnership</option>
+                <option value="sole_proprietor">Sole Proprietor</option>
+              </select>
+              <label>Federal EIN</label><input class="modal-input" id="prof-ein" type="text"/>
+              <label>State of Incorporation</label><input class="modal-input" id="prof-state" type="text"/>
+            </div>
+            <div class="profile-section">
+              <h3>Business Type</h3>
+              <label>Industry</label>
+              <select class="modal-input" id="prof-industry">
+                <option value="">— Select —</option>
+                <option value="e_commerce">E-Commerce</option>
+                <option value="import_export">Import / Export</option>
+                <option value="professional_services">Professional Services</option>
+                <option value="retail">Retail</option>
+                <option value="construction">Construction</option>
+                <option value="healthcare">Healthcare</option>
+                <option value="content_creator">Content Creator</option>
+                <option value="manufacturing">Manufacturing</option>
+                <option value="other">Other</option>
+              </select>
+              <label>Business Model</label>
+              <select class="modal-input" id="prof-business-model">
+                <option value="">— Select —</option>
+                <option value="product_based">Product-Based</option>
+                <option value="service_based">Service-Based</option>
+                <option value="mixed">Mixed</option>
+              </select>
+            </div>
+            <div class="profile-section">
+              <h3>Accounting Setup</h3>
+              <label>Accounting Basis</label>
+              <select class="modal-input" id="prof-accounting-basis">
+                <option value="cash">Cash Basis</option>
+                <option value="accrual">Accrual Basis</option>
+              </select>
+              <label>Fiscal Year Start (MM-DD)</label><input class="modal-input" id="prof-fiscal-year" type="text"/>
+              <label>Inventory Method</label>
+              <select class="modal-input" id="prof-inventory-method">
+                <option value="none">Not applicable</option>
+                <option value="fifo">FIFO</option>
+                <option value="lifo">LIFO</option>
+                <option value="wac">Weighted Average Cost</option>
+              </select>
+              <label>Currency</label><input class="modal-input" id="prof-currency" type="text"/>
+            </div>
+            <div class="profile-section">
+              <h3>Contact</h3>
+              <label>Street</label><input class="modal-input" id="prof-street" type="text"/>
+              <label>City</label><input class="modal-input" id="prof-city" type="text"/>
+              <label>Zip</label><input class="modal-input" id="prof-zip" type="text"/>
+              <label>Phone</label><input class="modal-input" id="prof-phone" type="text"/>
+              <label>Email</label><input class="modal-input" id="prof-email" type="email"/>
+            </div>
+            <div class="modal-actions" style="justify-content:flex-start;margin-top:2rem">
+              <button id="prof-save-btn" class="btn-primary">Save Changes</button>
+              <button id="prof-reopen-wizard-btn" class="btn-secondary">Reopen Setup Wizard</button>
+            </div>
+            <p id="prof-save-msg" style="margin-top:.5rem;min-height:1.2em;color:#10b981"></p>
+          </div>
+        </section>
+
         <button id="ai-panel-toggle" class="ai-panel-toggle" aria-label="Toggle AI panel">&#10094; AI</button>
 
       </main>
