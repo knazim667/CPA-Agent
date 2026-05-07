@@ -2375,12 +2375,18 @@ function initProfileTab() {
           body: JSON.stringify(payload),
         }).then(function(r) { return r.json(); }).then(function(d) {
           var msg = document.getElementById('prof-save-msg');
-          if (msg) { msg.textContent = d.ok ? 'Saved.' : (d.detail || 'Error saving profile.'); }
+          if (msg) {
+            msg.style.color = d.ok ? '#10b981' : '#f87171';
+            msg.textContent = d.ok ? 'Saved.' : (d.detail || 'Error saving profile.');
+          }
           if (d.ok) { fetchStatus(); }
         }).catch(function() {
           var msg = document.getElementById('prof-save-msg');
           if (msg) { msg.style.color = '#f87171'; msg.textContent = 'Network error.'; }
         });
+      }).catch(function() {
+        var msg = document.getElementById('prof-save-msg');
+        if (msg) { msg.style.color = '#f87171'; msg.textContent = 'Network error.'; }
       });
     });
   }
@@ -2391,7 +2397,7 @@ function initProfileTab() {
       fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
         onboardingWizardShown = false;
         openOnboardingWizard(s.active_business_key, s.active_business);
-      });
+      }).catch(function(err) { console.error('reopen wizard error:', err); });
     });
   }
 }
