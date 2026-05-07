@@ -236,7 +236,7 @@ Line 8:  Taxable income per return:         $XX,XXX
 ✅ Phase 3 (DONE)   → skills/inventory_engine.py — FIFO/LIFO/WAC, landed cost, LCM impairment, LIFO reserve
 ✅ Phase 4 (DONE)   → Update skills/payroll_engine.py — 401k/Section 125 pre-tax deductions, 2026 SS wage base
 ✅ Phase 5 (DONE)   → Build skills/m1_reconciler.py (before tax season)
-   Phase 6          → Transaction splitting support
+✅ Phase 6 (DONE)   → Transaction splitting support
 ```
 
 ---
