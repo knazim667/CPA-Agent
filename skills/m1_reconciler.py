@@ -48,6 +48,14 @@ class M1Draft:
 
 
 class M1Reconciler:
+    _ADJUSTMENT_FIELD: dict[str, str] = {
+        "meals_50pct": "meals_total",
+        "fines": "fines_total",
+        "officer_life_insurance": "officer_life_insurance_total",
+        "federal_income_tax": "federal_income_tax_total",
+        "other_nondeductible": "other_nondeductible_total",
+    }
+
     def __init__(self, memory_manager) -> None:
         self.memory = memory_manager
         self._state: dict[str, dict[str, float]] = self.memory.load_m1_state()
@@ -75,3 +83,17 @@ class M1Reconciler:
         if yk not in self._state:
             return dict(_ZERO_YEAR_STATE)
         return dict(self._state[yk])
+
+    def record_transaction(
+        self, amount: float, category: str, year: int | None = None
+    ) -> str | None:
+        key = category.strip().lower()
+        adj_type = self._custom_map.get(key) or _DEFAULT_CATEGORY_MAP.get(key)
+        if adj_type is None:
+            return None
+        yk = self._year_key(year)
+        ys = self._get_year_state(yk)
+        field = self._ADJUSTMENT_FIELD[adj_type]
+        ys[field] = round(ys[field] + amount, 2)
+        self.memory.save_m1_state(self._state)
+        return adj_type

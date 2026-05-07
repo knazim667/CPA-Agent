@@ -173,3 +173,58 @@ def test_get_ytd_summary_returns_recorded_totals():
     rec = M1Reconciler(mm)
     summary = rec.get_ytd_summary(2026)
     assert summary["meals_total"] == 1200.0
+
+
+def test_record_transaction_default_meals_mapping():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    result = rec.record_transaction(1200.0, "meals", 2026)
+    assert result == "meals_50pct"
+    assert mm._m1_state["2026"]["meals_total"] == 1200.0
+
+
+def test_record_transaction_unknown_category_returns_none():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    result = rec.record_transaction(500.0, "office_supplies", 2026)
+    assert result is None
+    assert "2026" not in mm._m1_state
+
+
+def test_record_transaction_accumulates_across_calls():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_transaction(300.0, "meals", 2026)
+    rec.record_transaction(400.0, "entertainment", 2026)
+    assert mm._m1_state["2026"]["meals_total"] == pytest.approx(700.0)
+
+
+def test_record_transaction_fines_uses_correct_field():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_transaction(500.0, "fines", 2026)
+    assert mm._m1_state["2026"]["fines_total"] == 500.0
+
+
+def test_record_transaction_custom_mapping_takes_precedence():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.add_category_mapping("club_dues", "other_nondeductible")
+    result = rec.record_transaction(800.0, "club_dues", 2026)
+    assert result == "other_nondeductible"
+    assert mm._m1_state["2026"]["other_nondeductible_total"] == 800.0
+
+
+def test_record_transaction_case_insensitive_category():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    result = rec.record_transaction(100.0, "Meals", 2026)
+    assert result == "meals_50pct"
+
+
+def test_record_transaction_negative_amount_reduces_total():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_transaction(500.0, "meals", 2026)
+    rec.record_transaction(-100.0, "meals", 2026)  # refund
+    assert mm._m1_state["2026"]["meals_total"] == pytest.approx(400.0)
