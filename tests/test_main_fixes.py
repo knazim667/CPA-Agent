@@ -205,3 +205,19 @@ def test_detect_split_command_amounts_parsed_as_floats():
     assert result is not None
     assert isinstance(result["splits"][0]["amount"], float)
     assert result["splits"][0]["amount"] == 75.50
+
+
+def test_detect_split_command_description_format():
+    agent = make_agent()
+    result = agent.detect_split_command(
+        "split this $200 Amazon charge: $100 office supplies, $100 inventory"
+    )
+    assert result is not None
+    assert result["splits"][0]["description"] == "Amazon charge - office supplies"
+    assert result["splits"][1]["description"] == "Amazon charge - inventory"
+
+
+def test_detect_split_command_no_match_with_split_word():
+    agent = make_agent()
+    # "split" is present but pattern doesn't match (no colon-delimited splits)
+    assert agent.detect_split_command("split evenly between parties") is None

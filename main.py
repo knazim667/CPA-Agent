@@ -1480,9 +1480,11 @@ class CPAAgent:
         parent_desc = m.group(2).strip()
         splits = []
         for sm in re.finditer(
-            r"\$?([\d,]+(?:\.\d{1,2})?)\s+([^,$]+)", m.group(3)
+            r"\$?(\d[\d,]*(?:\.\d{1,2})?)\s+([^,$]+)", m.group(3)
         ):
-            label = sm.group(2).strip().rstrip(",")
+            label = sm.group(2).strip().rstrip(".,;:!?")
+            if not label:
+                continue
             splits.append(
                 {
                     "amount": float(sm.group(1).replace(",", "")),
