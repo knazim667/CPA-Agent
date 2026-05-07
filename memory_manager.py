@@ -282,3 +282,33 @@ class MemoryManager:
         path = self._budgets_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _m1_state_path(self) -> Path:
+        return self.long_term_dir / self.current_business_key / "m1_state.json"
+
+    def load_m1_state(self) -> dict[str, Any]:
+        path = self._m1_state_path()
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def save_m1_state(self, data: dict[str, Any]) -> None:
+        path = self._m1_state_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def _m1_category_map_path(self) -> Path:
+        return self.long_term_dir / self.current_business_key / "m1_category_map.json"
+
+    def load_m1_category_map(self) -> dict[str, str]:
+        path = self._m1_category_map_path()
+        if not path.exists():
+            return {}
+        with path.open("r", encoding="utf-8") as handle:
+            return json.load(handle)
+
+    def save_m1_category_map(self, data: dict[str, str]) -> None:
+        path = self._m1_category_map_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
