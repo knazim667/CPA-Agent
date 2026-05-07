@@ -74,7 +74,6 @@ def _compute_fica_employee(
 
 
 def _compute_employer_taxes(
-    gross_pay: float,
     fica_base: float,
     ytd_wages: float,
     suta_rate: float,
@@ -85,7 +84,7 @@ def _compute_employer_taxes(
     medicare_match = round(fica_base * MEDICARE_RATE, 2)
 
     futa_remaining = max(0.0, FUTA_WAGE_BASE - ytd_wages)
-    futa_taxable = min(gross_pay, futa_remaining)
+    futa_taxable = min(fica_base, futa_remaining)
     futa = round(futa_taxable * FUTA_NET_RATE, 2)
     suta = round(futa_taxable * suta_rate, 2)
 
@@ -129,8 +128,8 @@ def compute_net_pay(
     state_rate: float = 0.0,
     suta_rate: float = 0.0,
 ) -> tuple[EmployeePayroll, EmployerBurden]:
-    fica_base = gross_pay - section_125_health
-    fit_base = fica_base - retirement_401k
+    fica_base = max(0.0, gross_pay - section_125_health)
+    fit_base = max(0.0, fica_base - retirement_401k)
 
     annual_fit_base = fit_base * pay_periods_per_year
     adjusted = annual_fit_base - allowances * ALLOWANCE_ANNUAL_VALUE
@@ -143,7 +142,7 @@ def compute_net_pay(
         fica_base, ytd_wages
     )
     ss_match, medicare_match, futa, suta = _compute_employer_taxes(
-        gross_pay, fica_base, ytd_wages, suta_rate
+        fica_base, ytd_wages, suta_rate
     )
 
     net_pay = round(

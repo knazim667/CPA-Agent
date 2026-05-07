@@ -173,31 +173,31 @@ def test_fica_no_additional_medicare_below_threshold():
 
 
 def test_employer_taxes_standard():
-    # gross=5000, fica_base=4800, ytd=0, suta=0.027
-    ss_m, med_m, futa, suta = _compute_employer_taxes(5_000, 4_800, 0.0, 0.027)
-    assert ss_m == pytest.approx(297.60, abs=0.01)   # 4800 * 0.062
-    assert med_m == pytest.approx(69.60, abs=0.01)   # 4800 * 0.0145
-    assert futa == pytest.approx(30.00, abs=0.01)    # 5000 * 0.006 (under $7k cap)
-    assert suta == pytest.approx(135.00, abs=0.01)   # 5000 * 0.027
+    # fica_base=4800, ytd=0, suta=0.027
+    ss_m, med_m, futa, suta = _compute_employer_taxes(4_800, 0.0, 0.027)
+    assert ss_m == pytest.approx(297.60, abs=0.01)    # 4800 * 0.062
+    assert med_m == pytest.approx(69.60, abs=0.01)    # 4800 * 0.0145
+    assert futa == pytest.approx(28.80, abs=0.01)     # 4800 * 0.006
+    assert suta == pytest.approx(129.60, abs=0.01)    # 4800 * 0.027
 
 
 def test_employer_futa_cap_mid_paycheck():
     # ytd=6500 → only $500 of $7000 FUTA base remains
-    _, _, futa, suta = _compute_employer_taxes(1_000, 1_000, 6_500, 0.03)
+    _, _, futa, suta = _compute_employer_taxes(1_000, 6_500, 0.03)
     assert futa == pytest.approx(3.00, abs=0.01)   # 500 * 0.006
     assert suta == pytest.approx(15.00, abs=0.01)  # 500 * 0.03
 
 
 def test_employer_futa_cap_fully_exceeded():
     # ytd >= 7000 → zero FUTA and SUTA
-    _, _, futa, suta = _compute_employer_taxes(5_000, 5_000, 7_000, 0.03)
+    _, _, futa, suta = _compute_employer_taxes(5_000, 7_000, 0.03)
     assert futa == 0.0
     assert suta == 0.0
 
 
 def test_employer_ss_match_respects_wage_base():
     # ytd=184000, fica_base=5000 → only $500 SS-taxable for employer too
-    ss_m, med_m, _, _ = _compute_employer_taxes(5_000, 5_000, 184_000, 0.0)
+    ss_m, med_m, _, _ = _compute_employer_taxes(5_000, 184_000, 0.0)
     assert ss_m == pytest.approx(31.00, abs=0.01)   # 500 * 0.062
     assert med_m == pytest.approx(72.50, abs=0.01)  # 5000 * 0.0145 (no cap)
 
@@ -205,7 +205,7 @@ def test_employer_ss_match_respects_wage_base():
 def test_employer_no_additional_medicare_match():
     # Employer does NOT pay the 0.9% additional Medicare — only employee does
     # ytd > SS_WAGE_BASE so ss_m = 0; check medicare_match = 1.45% only (not 2.35%)
-    ss_m, med_m, _, _ = _compute_employer_taxes(10_000, 10_000, 201_000, 0.0)
+    ss_m, med_m, _, _ = _compute_employer_taxes(10_000, 201_000, 0.0)
     assert ss_m == 0.0
     assert med_m == pytest.approx(145.00, abs=0.01)  # 10000 * 0.0145 only
 
@@ -240,10 +240,10 @@ def test_compute_net_pay_happy_path():
 
     assert er.social_security_match == pytest.approx(297.60, abs=0.01)
     assert er.medicare_match == pytest.approx(69.60, abs=0.01)
-    assert er.futa == pytest.approx(30.00, abs=0.01)       # 5000*0.006 (under 7k cap)
-    assert er.suta == pytest.approx(135.00, abs=0.01)      # 5000*0.027
-    # total = 5000 + 297.60 + 69.60 + 30.00 + 135.00 = 5532.20
-    assert er.total_employer_cost == pytest.approx(5_532.20, abs=0.02)
+    assert er.futa == pytest.approx(28.80, abs=0.01)       # 4800*0.006 (fica_base, under 7k cap)
+    assert er.suta == pytest.approx(129.60, abs=0.01)      # 4800*0.027
+    # total = 5000 + 297.60 + 69.60 + 28.80 + 129.60 = 5525.60
+    assert er.total_employer_cost == pytest.approx(5_525.60, abs=0.02)
 
 
 def test_compute_net_pay_zero_deductions():
