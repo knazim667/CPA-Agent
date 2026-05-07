@@ -134,3 +134,24 @@ def test_split_transaction_single_split():
     rows = engine.split_transaction(50.0, splits, date="2026-05-07")
     assert len(rows) == 1
     assert rows[0][6] == "split 1/1"
+
+
+def test_split_transaction_raises_on_non_numeric_amount():
+    engine = CategorizationEngine()
+    splits = [{"amount": "100.00", "category": "Office Supplies", "description": "Amazon - supplies"}]
+    with pytest.raises(ValueError, match="must be a number"):
+        engine.split_transaction(100.0, splits)
+
+
+def test_split_transaction_custom_entry_type():
+    engine = CategorizationEngine()
+    splits = [{"amount": 500.0, "category": "Sales Revenue", "description": "Client payment"}]
+    rows = engine.split_transaction(500.0, splits, date="2026-05-07", entry_type="Income")
+    assert rows[0][4] == "Income"
+
+
+def test_split_transaction_default_date_is_empty_string():
+    engine = CategorizationEngine()
+    splits = [{"amount": 50.0, "category": "Office", "description": "Pen"}]
+    rows = engine.split_transaction(50.0, splits)  # no date kwarg
+    assert rows[0][0] == ""

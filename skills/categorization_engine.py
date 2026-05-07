@@ -94,6 +94,9 @@ class CategorizationEngine:
         parent_description: str = "",
         entry_type: str = "Expense",
     ) -> list[list[Any]]:
+        # parent_description is accepted for API consistency but each split provides its own description
+        _ = parent_description
+
         if not splits:
             raise ValueError("split_transaction requires at least one split.")
         for i, s in enumerate(splits):
@@ -102,22 +105,31 @@ class CategorizationEngine:
                     raise ValueError(
                         f"Split {i} is missing required key '{key}'."
                     )
-        total_split = round(sum(s["amount"] for s in splits), 2)
+            # Critical #2: Validate numeric type before any arithmetic
+            if not isinstance(s["amount"], (int, float)):
+                raise ValueError(
+                    f"Split {i} 'amount' must be a number, got {type(s['amount']).__name__}."
+                )
+
+        # Critical #1: Round amounts before validation to ensure balanced ledger
+        rounded_amounts = [round(s["amount"], 2) for s in splits]
+        total_split = sum(rounded_amounts)
         if abs(total_split - round(total_amount, 2)) > 0.01:
             raise ValueError(
                 f"Split amounts (${total_split:.2f}) do not match total "
                 f"(${round(total_amount, 2):.2f})."
             )
+
         n = len(splits)
         return [
             [
                 date,
-                s["description"],
-                s["category"],
-                round(s["amount"], 2),
+                splits[i]["description"],
+                splits[i]["category"],
+                rounded_amounts[i],
                 entry_type,
                 "",
-                f"split {i}/{n}",
+                f"split {i + 1}/{n}",
             ]
-            for i, s in enumerate(splits, start=1)
+            for i in range(n)
         ]
