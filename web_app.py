@@ -8,11 +8,18 @@ import uuid
 from datetime import datetime
 from pathlib import Path
 from threading import Lock
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 
 load_dotenv()
+
+import warnings as _warnings
+if os.environ.get("SECRET_KEY", "dev-insecure-key") == "dev-insecure-key":
+    _warnings.warn(
+        "SECRET_KEY is using the insecure default. Set a real 64-char hex value in .env before deploying.",
+        stacklevel=1,
+    )
 
 from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
 from fastapi.responses import FileResponse, RedirectResponse, Response
@@ -193,12 +200,15 @@ def setup_create_owner(payload: CreateUserRequest, request: Request) -> dict:
         raise HTTPException(status_code=403, detail="Setup already complete.")
     if payload.role != "owner":
         raise HTTPException(status_code=400, detail="First account must be owner.")
-    user = user_manager.create_user(
-        payload.username.strip(),
-        payload.email.strip(),
-        payload.password,
-        "owner",
-    )
+    try:
+        user = user_manager.create_user(
+            payload.username.strip(),
+            payload.email.strip(),
+            payload.password,
+            "owner",
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     request.session["user_id"] = user["id"]
     return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
 
@@ -218,13 +228,16 @@ def create_user_endpoint(
 ) -> dict:
     if payload.role not in ("owner", "bookkeeper", "employee"):
         raise HTTPException(status_code=400, detail="Invalid role.")
-    user = user_manager.create_user(
-        payload.username.strip(),
-        payload.email.strip(),
-        payload.password,
-        payload.role,
-        payload.business_keys or [],
-    )
+    try:
+        user = user_manager.create_user(
+            payload.username.strip(),
+            payload.email.strip(),
+            payload.password,
+            payload.role,
+            payload.business_keys or [],
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return {"ok": True, "user": user}
 
 

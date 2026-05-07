@@ -28,10 +28,22 @@ def client(monkeypatch):
         "learned_source_count": 0,
     }
 
+    import auth
     import web_app
     web_app.agent = mock_agent
     from web_app import app
+
+    def _fake_owner():
+        return {"id": 1, "username": "testowner", "role": "owner", "is_active": True,
+                "email": "test@test.com", "created_at": "2026-01-01"}
+
+    app.dependency_overrides[auth.get_current_user] = _fake_owner
+    app.dependency_overrides[auth.require_owner] = _fake_owner
+    app.dependency_overrides[auth.require_owner_or_bookkeeper] = _fake_owner
+
     yield TestClient(app)
+
+    app.dependency_overrides.clear()
 
 
 def test_provider_switch_to_openrouter(client, monkeypatch):
