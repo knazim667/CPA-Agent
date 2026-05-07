@@ -235,9 +235,7 @@ Line 8:  Taxable income per return:         $XX,XXX
 ✅ Phase 2 (DONE)   → skills/depreciation_engine.py — MACRS tables, 179, bonus, disposal recapture, mid-quarter
 ✅ Phase 3 (DONE)   → skills/inventory_engine.py — FIFO/LIFO/WAC, landed cost, LCM impairment, LIFO reserve
 ✅ Phase 4 (DONE)   → Update skills/payroll_engine.py — 401k/Section 125 pre-tax deductions, 2026 SS wage base
-   Phase 3          → Build skills/inventory_engine.py (only if business sells physical goods)
-   Phase 4          → Update skills/payroll_engine.py pre-tax deductions (401k, Section 125)
-   Phase 5          → Build skills/m1_reconciler.py (before tax season)
+✅ Phase 5 (DONE)   → Build skills/m1_reconciler.py (before tax season)
    Phase 6          → Transaction splitting support
 ```
 
