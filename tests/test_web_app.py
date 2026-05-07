@@ -189,3 +189,42 @@ def test_delete_recurring_not_found(client):
     web_app.agent.recurring.cancel_schedule.return_value = False
     response = client.delete("/api/recurring/nonexistent-id")
     assert response.status_code == 404
+
+
+def test_get_business_profile_returns_profile(client):
+    import web_app
+    # The test agent has at least one business configured
+    r = client.get("/api/status")
+    assert r.status_code == 200
+    key = r.json().get("active_business_key") or r.json().get("businesses", [{}])[0].get("key", "")
+    if not key:
+        pytest.skip("No business configured in test environment")
+    web_app.agent.memory.load_business_profile.return_value = {
+        "business_name": "Biz A",
+        "accounting_basis": "cash",
+        "legal_structure": "LLC",
+    }
+    r2 = client.get(f"/api/businesses/{key}/profile")
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["ok"] is True
+    assert "profile" in data
+    assert "business_name" in data["profile"]
+
+
+def test_update_business_profile_returns_updated(client):
+    import web_app
+    r = client.get("/api/status")
+    assert r.status_code == 200
+    key = r.json().get("active_business_key") or r.json().get("businesses", [{}])[0].get("key", "")
+    if not key:
+        pytest.skip("No business configured in test environment")
+    web_app.agent.memory.update_business_profile.return_value = {
+        "business_name": "Biz A",
+        "accounting_basis": "accrual",
+    }
+    r2 = client.put(f"/api/businesses/{key}/profile", json={"accounting_basis": "accrual"})
+    assert r2.status_code == 200
+    data = r2.json()
+    assert data["ok"] is True
+    assert data["profile"]["accounting_basis"] == "accrual"

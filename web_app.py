@@ -145,6 +145,24 @@ class UpdateUserRequest(BaseModel):
     business_keys: list[str] | None = None
 
 
+class ProfileUpdateRequest(BaseModel):
+    legal_structure: Optional[str] = None
+    industry: Optional[str] = None
+    business_model: Optional[str] = None
+    fiscal_year_start: Optional[str] = None
+    accounting_basis: Optional[str] = None
+    inventory_method: Optional[str] = None
+    operating_states: Optional[list[str]] = None
+    address: Optional[dict] = None
+    contact: Optional[dict] = None
+    owners: Optional[list[dict]] = None
+    onboarding_complete: Optional[bool] = None
+    business_name: Optional[str] = None
+    federal_ein: Optional[str] = None
+    state: Optional[str] = None
+    default_books_currency: Optional[str] = None
+
+
 @app.get("/")
 def index(request: Request) -> Response:
     if user_manager.is_empty():
@@ -192,6 +210,38 @@ def auth_logout(request: Request) -> dict:
 @app.get("/api/auth/me")
 def auth_me(current_user: dict = Depends(get_current_user)) -> dict:
     return {"user": current_user}
+
+
+@app.get("/api/businesses/{business_key}/profile")
+def get_business_profile(
+    business_key: str,
+    current_user: dict = Depends(require_owner_or_bookkeeper),
+) -> dict:
+    with agent_lock:
+        if not user_manager.can_access_business(current_user, business_key):
+            raise HTTPException(status_code=403, detail="Access denied to this business.")
+        try:
+            profile = agent.memory.load_business_profile(business_key)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Business not found.")
+        return {"ok": True, "profile": profile}
+
+
+@app.put("/api/businesses/{business_key}/profile")
+def update_business_profile_endpoint(
+    business_key: str,
+    payload: ProfileUpdateRequest,
+    current_user: dict = Depends(require_owner),
+) -> dict:
+    with agent_lock:
+        if not user_manager.can_access_business(current_user, business_key):
+            raise HTTPException(status_code=403, detail="Access denied to this business.")
+        try:
+            updates = {k: v for k, v in payload.model_dump().items() if v is not None}
+            profile = agent.memory.update_business_profile(business_key, updates)
+        except FileNotFoundError:
+            raise HTTPException(status_code=404, detail="Business not found.")
+        return {"ok": True, "profile": profile}
 
 
 @app.post("/api/setup/create-owner")
