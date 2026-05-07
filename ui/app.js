@@ -82,6 +82,7 @@ var currentUserRole = null;
 var wizardStep = 1;
 var wizardTotalSteps = 5;
 var wizardBizKey = null;
+var onboardingWizardShown = false;
 
 /* ----------------------------------------------------------
    4. DOM element references (populated after DOMContentLoaded)
@@ -831,7 +832,8 @@ function updateStatus(status) {
   }
 
   // Check onboarding_complete on current business
-  if (status.active_business_key && status.active_business && status.active_business.onboarding_complete === false) {
+  if (!onboardingWizardShown && status.active_business_key && status.active_business && status.active_business.onboarding_complete === false) {
+    onboardingWizardShown = true;
     fetch('/api/businesses/' + status.active_business_key + '/profile')
       .then(function(r) { return r.json(); })
       .then(function(d) {
@@ -2159,6 +2161,7 @@ function openOnboardingWizard(bizKey, existingProfile) {
 
 function closeOnboardingWizard() {
   document.getElementById('onboarding-modal').classList.add('hidden');
+  onboardingWizardShown = false;
 }
 
 function updateWizardView() {
@@ -2190,8 +2193,10 @@ function wizardCollectStep(step) {
     return { industry: industry, business_model: model };
   }
   if (step === 3) {
+    var basis = document.getElementById('wiz-accounting-basis').value;
+    if (!basis) { document.getElementById('wiz-error').textContent = 'Accounting basis is required.'; return null; }
     return {
-      accounting_basis: document.getElementById('wiz-accounting-basis').value,
+      accounting_basis: basis,
       fiscal_year_start: document.getElementById('wiz-fiscal-year').value.trim() || '01-01',
       inventory_method: document.getElementById('wiz-inventory-method').value,
     };
@@ -2252,6 +2257,8 @@ function initWizard() {
           wizardStep++;
           updateWizardView();
         }
+      }).catch(function() {
+        document.getElementById('wiz-error').textContent = 'Network error – please retry.';
       });
     });
   }
@@ -2270,6 +2277,8 @@ function initWizard() {
         saveWizardStep({ onboarding_complete: true }, true).then(function() {
           closeOnboardingWizard();
           fetchStatus();
+        }).catch(function(err) {
+          console.error('Skip save failed:', err);
         });
       } else {
         wizardStep++;
