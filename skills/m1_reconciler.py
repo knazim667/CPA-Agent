@@ -88,7 +88,9 @@ class M1Reconciler:
         self, amount: float, category: str, year: int | None = None
     ) -> str | None:
         key = category.strip().lower()
-        adj_type = self._custom_map.get(key) or _DEFAULT_CATEGORY_MAP.get(key)
+        adj_type = self._custom_map.get(key)
+        if adj_type is None:
+            adj_type = _DEFAULT_CATEGORY_MAP.get(key)
         if adj_type is None:
             return None
         yk = self._year_key(year)
