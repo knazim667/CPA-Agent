@@ -1111,3 +1111,12 @@ tfoot td {
 .modal-input { width:100%; background:#0f172a; border:1px solid #334155; border-radius:8px; padding:.6rem .85rem; color:#f1f5f9; font-size:.9rem; margin-bottom:1rem; }
 .modal-input:focus { outline:none; border-color:#6366f1; }
 .modal-actions { display:flex; gap:1rem; justify-content:flex-end; margin-top:1.25rem; }
+
+/* Wizard */
+.wizard-box { max-width:540px; }
+.wizard-header { margin-bottom:1.5rem; }
+.wizard-progress { margin-top:.75rem; }
+.wizard-step-indicator { font-size:.8rem; color:#94a3b8; display:block; margin-bottom:.4rem; }
+.wizard-progress-bar { background:#1e3a5f; border-radius:4px; height:6px; }
+.wizard-progress-fill { background:#6366f1; height:6px; border-radius:4px; transition:width .3s; }
+.wizard-step h3 { margin-bottom:1.25rem; font-size:1rem; color:#e2e8f0; }

@@ -79,6 +79,9 @@ var latestPresentation = null;
 var seenAlertDeadlines = new Set();
 var MAX_SEEN_ALERTS = 50;
 var currentUserRole = null;
+var wizardStep = 1;
+var wizardTotalSteps = 5;
+var wizardBizKey = null;
 
 /* ----------------------------------------------------------
    4. DOM element references (populated after DOMContentLoaded)
@@ -825,6 +828,18 @@ function updateStatus(status) {
       }
       businessSelect.appendChild(opt);
     });
+  }
+
+  // Check onboarding_complete on current business
+  if (status.active_business_key && status.active_business && status.active_business.onboarding_complete === false) {
+    fetch('/api/businesses/' + status.active_business_key + '/profile')
+      .then(function(r) { return r.json(); })
+      .then(function(d) {
+        if (d.ok && d.profile.onboarding_complete === false) {
+          openOnboardingWizard(status.active_business_key, d.profile);
+        }
+      })
+      .catch(function() {});
   }
 
   var greetingEl = document.getElementById('dash-greeting');
@@ -2122,6 +2137,167 @@ function initUsers() {
 }
 
 /* ----------------------------------------------------------
+   Onboarding Wizard
+   ---------------------------------------------------------- */
+function openOnboardingWizard(bizKey, existingProfile) {
+  wizardBizKey = bizKey;
+  wizardStep = 1;
+  document.getElementById('onboarding-modal').classList.remove('hidden');
+  if (existingProfile) {
+    if (existingProfile.business_name) document.getElementById('wiz-business-name').value = existingProfile.business_name;
+    if (existingProfile.legal_structure) document.getElementById('wiz-legal-structure').value = existingProfile.legal_structure;
+    if (existingProfile.state) document.getElementById('wiz-state').value = existingProfile.state;
+    if (existingProfile.federal_ein) document.getElementById('wiz-ein').value = existingProfile.federal_ein;
+    if (existingProfile.industry) document.getElementById('wiz-industry').value = existingProfile.industry;
+    if (existingProfile.business_model) document.getElementById('wiz-business-model').value = existingProfile.business_model;
+    if (existingProfile.accounting_basis) document.getElementById('wiz-accounting-basis').value = existingProfile.accounting_basis;
+    if (existingProfile.fiscal_year_start) document.getElementById('wiz-fiscal-year').value = existingProfile.fiscal_year_start;
+    if (existingProfile.inventory_method) document.getElementById('wiz-inventory-method').value = existingProfile.inventory_method;
+  }
+  updateWizardView();
+}
+
+function closeOnboardingWizard() {
+  document.getElementById('onboarding-modal').classList.add('hidden');
+}
+
+function updateWizardView() {
+  for (var i = 1; i <= wizardTotalSteps; i++) {
+    var el = document.getElementById('wizard-step-' + i);
+    if (el) { el.classList.toggle('hidden', i !== wizardStep); }
+  }
+  document.getElementById('wizard-step-label').textContent = 'Step ' + wizardStep + ' of ' + wizardTotalSteps;
+  document.getElementById('wizard-progress-fill').style.width = (wizardStep / wizardTotalSteps * 100) + '%';
+  document.getElementById('wiz-back').classList.toggle('hidden', wizardStep === 1);
+  document.getElementById('wiz-skip').classList.toggle('hidden', wizardStep < 4);
+  document.getElementById('wiz-next').textContent = wizardStep === wizardTotalSteps ? 'Finish' : 'Next →';
+  document.getElementById('wiz-error').textContent = '';
+}
+
+function wizardCollectStep(step) {
+  if (step === 1) {
+    var name = document.getElementById('wiz-business-name').value.trim();
+    var structure = document.getElementById('wiz-legal-structure').value;
+    if (!name) { document.getElementById('wiz-error').textContent = 'Business name is required.'; return null; }
+    if (!structure) { document.getElementById('wiz-error').textContent = 'Legal structure is required.'; return null; }
+    return { business_name: name, legal_structure: structure, state: document.getElementById('wiz-state').value.trim(), federal_ein: document.getElementById('wiz-ein').value.trim() };
+  }
+  if (step === 2) {
+    var industry = document.getElementById('wiz-industry').value;
+    var model = document.getElementById('wiz-business-model').value;
+    if (!industry) { document.getElementById('wiz-error').textContent = 'Industry is required.'; return null; }
+    if (!model) { document.getElementById('wiz-error').textContent = 'Business model is required.'; return null; }
+    return { industry: industry, business_model: model };
+  }
+  if (step === 3) {
+    return {
+      accounting_basis: document.getElementById('wiz-accounting-basis').value,
+      fiscal_year_start: document.getElementById('wiz-fiscal-year').value.trim() || '01-01',
+      inventory_method: document.getElementById('wiz-inventory-method').value,
+    };
+  }
+  if (step === 4) {
+    var ownerRows = document.querySelectorAll('.wiz-owner-row');
+    var owners = [];
+    ownerRows.forEach(function(row) {
+      var n = row.querySelector('.wiz-owner-name').value.trim();
+      var p = parseFloat(row.querySelector('.wiz-owner-pct').value) || 0;
+      var r = row.querySelector('.wiz-owner-role').value.trim() || 'Member';
+      if (n) { owners.push({ name: n, ownership_pct: p, role: r }); }
+    });
+    return { owners: owners };
+  }
+  if (step === 5) {
+    return {
+      address: {
+        street: document.getElementById('wiz-street').value.trim(),
+        city: document.getElementById('wiz-city').value.trim(),
+        zip: document.getElementById('wiz-zip').value.trim(),
+        state: document.getElementById('wiz-state').value.trim(),
+        country: 'US',
+      },
+      contact: {
+        phone: document.getElementById('wiz-phone').value.trim(),
+        email: document.getElementById('wiz-email').value.trim(),
+      },
+    };
+  }
+  return {};
+}
+
+function saveWizardStep(stepData, isLastStep) {
+  var updates = Object.assign({}, stepData);
+  if (isLastStep) { updates.onboarding_complete = true; }
+  return fetch('/api/businesses/' + wizardBizKey + '/profile', {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(updates),
+  }).then(function(r) { return r.json(); });
+}
+
+function initWizard() {
+  var nextBtn = document.getElementById('wiz-next');
+  if (nextBtn) {
+    nextBtn.addEventListener('click', function() {
+      var data = wizardCollectStep(wizardStep);
+      if (!data) { return; }
+      var isLast = wizardStep === wizardTotalSteps;
+      saveWizardStep(data, isLast).then(function(resp) {
+        if (!resp.ok) { document.getElementById('wiz-error').textContent = 'Save failed.'; return; }
+        if (isLast) {
+          closeOnboardingWizard();
+          fetchStatus();
+          showToast('Business profile saved!', 'success');
+        } else {
+          wizardStep++;
+          updateWizardView();
+        }
+      });
+    });
+  }
+
+  var backBtn = document.getElementById('wiz-back');
+  if (backBtn) {
+    backBtn.addEventListener('click', function() {
+      if (wizardStep > 1) { wizardStep--; updateWizardView(); }
+    });
+  }
+
+  var skipBtn = document.getElementById('wiz-skip');
+  if (skipBtn) {
+    skipBtn.addEventListener('click', function() {
+      if (wizardStep === wizardTotalSteps) {
+        saveWizardStep({ onboarding_complete: true }, true).then(function() {
+          closeOnboardingWizard();
+          fetchStatus();
+        });
+      } else {
+        wizardStep++;
+        updateWizardView();
+      }
+    });
+  }
+
+  var addOwnerBtn = document.getElementById('wiz-add-owner');
+  if (addOwnerBtn) {
+    addOwnerBtn.addEventListener('click', function() {
+      var list = document.getElementById('wiz-owners-list');
+      var row = document.createElement('div');
+      row.className = 'wiz-owner-row';
+      row.style.display = 'flex';
+      row.style.gap = '8px';
+      row.style.marginBottom = '8px';
+      row.innerHTML =
+        '<input class="modal-input wiz-owner-name" type="text" placeholder="Full name" style="flex:2;margin:0"/>' +
+        '<input class="modal-input wiz-owner-pct" type="number" placeholder="%" style="flex:1;margin:0" min="0" max="100"/>' +
+        '<input class="modal-input wiz-owner-role" type="text" placeholder="Role" style="flex:1.5;margin:0" value="Managing Member"/>' +
+        '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:1.2rem">×</button>';
+      list.appendChild(row);
+    });
+  }
+}
+
+/* ----------------------------------------------------------
    DOMContentLoaded — wire everything up
    ---------------------------------------------------------- */
 
@@ -2208,6 +2384,7 @@ document.addEventListener('DOMContentLoaded', function () {
   configureVoice();
   initAuth();
   initUsers();
+  initWizard();
 
   /* Initial data load */
   fetchStatus();

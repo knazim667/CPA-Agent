@@ -743,5 +743,115 @@
     </div>
 
     <script src="/ui/app.js"></script>
+
+<!-- Onboarding Wizard Modal -->
+<div id="onboarding-modal" class="modal-overlay hidden">
+  <div class="modal-box wizard-box">
+    <div class="wizard-header">
+      <h2>Business Setup</h2>
+      <div class="wizard-progress">
+        <span class="wizard-step-indicator" id="wizard-step-label">Step 1 of 5</span>
+        <div class="wizard-progress-bar">
+          <div class="wizard-progress-fill" id="wizard-progress-fill" style="width:20%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Step 1: Identity -->
+    <div class="wizard-step" id="wizard-step-1">
+      <h3>Business Identity</h3>
+      <label>Business Name</label>
+      <input class="modal-input" id="wiz-business-name" type="text"/>
+      <label>Legal Structure</label>
+      <select class="modal-input" id="wiz-legal-structure">
+        <option value="">— Select —</option>
+        <option value="single_member_llc">Single-Member LLC</option>
+        <option value="multi_member_llc">Multi-Member LLC</option>
+        <option value="s_corp">S-Corp Election</option>
+        <option value="partnership">Partnership</option>
+        <option value="sole_proprietor">Sole Proprietor</option>
+      </select>
+      <label>State of Incorporation</label>
+      <input class="modal-input" id="wiz-state" type="text" placeholder="e.g. NY"/>
+      <label>Federal EIN (optional)</label>
+      <input class="modal-input" id="wiz-ein" type="text" placeholder="xx-xxxxxxx"/>
+    </div>
+
+    <!-- Step 2: Business Type -->
+    <div class="wizard-step hidden" id="wizard-step-2">
+      <h3>Business Type</h3>
+      <label>Industry</label>
+      <select class="modal-input" id="wiz-industry">
+        <option value="">— Select —</option>
+        <option value="e_commerce">E-Commerce</option>
+        <option value="import_export">Import / Export</option>
+        <option value="professional_services">Professional Services</option>
+        <option value="retail">Retail</option>
+        <option value="construction">Construction</option>
+        <option value="healthcare">Healthcare</option>
+        <option value="content_creator">Content Creator</option>
+        <option value="manufacturing">Manufacturing</option>
+        <option value="other">Other</option>
+      </select>
+      <label>Business Model</label>
+      <select class="modal-input" id="wiz-business-model">
+        <option value="">— Select —</option>
+        <option value="product_based">Product-Based</option>
+        <option value="service_based">Service-Based</option>
+        <option value="mixed">Mixed</option>
+      </select>
+    </div>
+
+    <!-- Step 3: Accounting Setup -->
+    <div class="wizard-step hidden" id="wizard-step-3">
+      <h3>Accounting Setup</h3>
+      <label>Accounting Basis</label>
+      <select class="modal-input" id="wiz-accounting-basis">
+        <option value="cash">Cash Basis</option>
+        <option value="accrual">Accrual Basis</option>
+      </select>
+      <label>Fiscal Year Start</label>
+      <input class="modal-input" id="wiz-fiscal-year" type="text" value="01-01" placeholder="MM-DD"/>
+      <label>Inventory Method</label>
+      <select class="modal-input" id="wiz-inventory-method">
+        <option value="none">Not applicable (service business)</option>
+        <option value="fifo">FIFO</option>
+        <option value="lifo">LIFO</option>
+        <option value="wac">Weighted Average Cost</option>
+      </select>
+    </div>
+
+    <!-- Step 4: Ownership (skippable) -->
+    <div class="wizard-step hidden" id="wizard-step-4">
+      <h3>Ownership</h3>
+      <p style="color:#94a3b8;font-size:.85rem;margin-bottom:1rem">Optional — can be updated later.</p>
+      <div id="wiz-owners-list"></div>
+      <button id="wiz-add-owner" class="btn-secondary" style="font-size:.85rem">+ Add Owner</button>
+    </div>
+
+    <!-- Step 5: Contact (skippable) -->
+    <div class="wizard-step hidden" id="wizard-step-5">
+      <h3>Contact Information</h3>
+      <p style="color:#94a3b8;font-size:.85rem;margin-bottom:1rem">Optional — can be updated later.</p>
+      <label>Street Address</label>
+      <input class="modal-input" id="wiz-street" type="text"/>
+      <label>City</label>
+      <input class="modal-input" id="wiz-city" type="text"/>
+      <label>Zip</label>
+      <input class="modal-input" id="wiz-zip" type="text"/>
+      <label>Phone</label>
+      <input class="modal-input" id="wiz-phone" type="text"/>
+      <label>Email</label>
+      <input class="modal-input" id="wiz-email" type="email"/>
+    </div>
+
+    <div class="modal-actions">
+      <button id="wiz-back" class="btn-secondary hidden">← Back</button>
+      <button id="wiz-skip" class="btn-secondary hidden">Skip for now</button>
+      <button id="wiz-next" class="btn-primary">Next →</button>
+    </div>
+    <p id="wiz-error" style="color:#f87171;margin-top:.5rem;min-height:1.2em"></p>
+  </div>
+</div>
   </body>
 </html>
