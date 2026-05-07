@@ -116,6 +116,72 @@ class EmployerBurden:
     total_employer_cost: float
 
 
+# ── Public API ───────────────────────────────────────────────────────────────
+
+def compute_net_pay(
+    gross_pay: float,
+    retirement_401k: float = 0.0,
+    section_125_health: float = 0.0,
+    filing_status: str = "single",
+    allowances: int = 0,
+    ytd_wages: float = 0.0,
+    pay_periods_per_year: int = 26,
+    state_rate: float = 0.0,
+    suta_rate: float = 0.0,
+) -> tuple[EmployeePayroll, EmployerBurden]:
+    fica_base = gross_pay - section_125_health
+    fit_base = fica_base - retirement_401k
+
+    annual_fit_base = fit_base * pay_periods_per_year
+    adjusted = annual_fit_base - allowances * ALLOWANCE_ANNUAL_VALUE
+    annual_fit = _compute_annual_fit(adjusted, filing_status)
+    federal_withholding = round(max(0.0, annual_fit / pay_periods_per_year), 2)
+
+    state_withholding = round(fit_base * state_rate, 2)
+
+    social_security, medicare, additional_medicare = _compute_fica_employee(
+        fica_base, ytd_wages
+    )
+    ss_match, medicare_match, futa, suta = _compute_employer_taxes(
+        gross_pay, fica_base, ytd_wages, suta_rate
+    )
+
+    net_pay = round(
+        gross_pay
+        - federal_withholding
+        - state_withholding
+        - social_security
+        - medicare
+        - additional_medicare
+        - retirement_401k
+        - section_125_health,
+        2,
+    )
+    total_employer_cost = round(gross_pay + ss_match + medicare_match + futa + suta, 2)
+
+    employee = EmployeePayroll(
+        gross_pay=gross_pay,
+        fit_base=fit_base,
+        fica_base=fica_base,
+        federal_withholding=federal_withholding,
+        state_withholding=state_withholding,
+        social_security=social_security,
+        medicare=medicare,
+        additional_medicare=additional_medicare,
+        retirement_401k=retirement_401k,
+        section_125_health=section_125_health,
+        net_pay=net_pay,
+    )
+    employer = EmployerBurden(
+        social_security_match=ss_match,
+        medicare_match=medicare_match,
+        futa=futa,
+        suta=suta,
+        total_employer_cost=total_employer_cost,
+    )
+    return employee, employer
+
+
 # ── Legacy (kept for backward compatibility) ────────────────────────────────
 @dataclass
 class PayrollCalculation:

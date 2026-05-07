@@ -19,6 +19,7 @@ from payroll_engine import (
     _compute_annual_fit,
     _compute_fica_employee,
     _compute_employer_taxes,
+    compute_net_pay,
 )
 
 
@@ -205,3 +206,71 @@ def test_employer_no_additional_medicare_match():
     ss_m, med_m, _, _ = _compute_employer_taxes(10_000, 10_000, 201_000, 0.0)
     assert ss_m == 0.0
     assert med_m == pytest.approx(145.00, abs=0.01)  # 10000 * 0.0145 only
+
+
+# ── Task 5: compute_net_pay integration tests ─────────────────────────────────
+
+
+def test_compute_net_pay_happy_path():
+    # gross=5000, 401k=300, s125=200, single, 1 allowance, biweekly, state=5%, suta=2.7%
+    emp, er = compute_net_pay(
+        gross_pay=5_000,
+        retirement_401k=300,
+        section_125_health=200,
+        filing_status="single",
+        allowances=1,
+        ytd_wages=0,
+        pay_periods_per_year=26,
+        state_rate=0.05,
+        suta_rate=0.027,
+    )
+    assert emp.fica_base == pytest.approx(4_800, abs=0.01)
+    assert emp.fit_base == pytest.approx(4_500, abs=0.01)
+    # FIT: annual_fit_base=117000, adjusted=112700 (1 allowance * 4300)
+    # 24% bracket: 17324.50 + 0.24*(112700-100525) = 17324.50+2922 = 20246.50; /26 = 778.71
+    assert emp.federal_withholding == pytest.approx(778.71, abs=0.02)
+    assert emp.state_withholding == pytest.approx(225.00, abs=0.01)   # 4500*0.05
+    assert emp.social_security == pytest.approx(297.60, abs=0.01)     # 4800*0.062
+    assert emp.medicare == pytest.approx(69.60, abs=0.01)             # 4800*0.0145
+    assert emp.additional_medicare == 0.0
+    # net = 5000 - 778.71 - 225.00 - 297.60 - 69.60 - 0 - 300 - 200 = 3129.09
+    assert emp.net_pay == pytest.approx(3_129.09, abs=0.02)
+
+    assert er.social_security_match == pytest.approx(297.60, abs=0.01)
+    assert er.medicare_match == pytest.approx(69.60, abs=0.01)
+    assert er.futa == pytest.approx(30.00, abs=0.01)       # 5000*0.006 (under 7k cap)
+    assert er.suta == pytest.approx(135.00, abs=0.01)      # 5000*0.027
+    # total = 5000 + 297.60 + 69.60 + 30.00 + 135.00 = 5532.20
+    assert er.total_employer_cost == pytest.approx(5_532.20, abs=0.02)
+
+
+def test_compute_net_pay_zero_deductions():
+    # No pre-tax deductions, no state, single, 0 allowances, biweekly
+    emp, er = compute_net_pay(gross_pay=3_000, pay_periods_per_year=26)
+    assert emp.fica_base == 3_000
+    assert emp.fit_base == 3_000
+    # Annual: 78000 → 22% bracket: 5224.50 + 0.22*(78000-45525) = 5224.50+7144.50 = 12369.00
+    # Per period: 12369.00/26 = 475.73
+    assert emp.federal_withholding == pytest.approx(475.73, abs=0.02)
+    assert emp.social_security == pytest.approx(186.00, abs=0.01)
+    assert emp.medicare == pytest.approx(43.50, abs=0.01)
+    # net = 3000 - 475.73 - 186.00 - 43.50 = 2294.77
+    assert emp.net_pay == pytest.approx(2_294.77, abs=0.02)
+
+
+def test_compute_net_pay_ss_cap_mid_period():
+    emp, er = compute_net_pay(gross_pay=1_000, ytd_wages=184_000)
+    assert emp.social_security == pytest.approx(31.00, abs=0.01)
+    assert er.social_security_match == pytest.approx(31.00, abs=0.01)
+
+
+def test_compute_net_pay_additional_medicare():
+    emp, _ = compute_net_pay(gross_pay=1_000, ytd_wages=199_500)
+    assert emp.additional_medicare == pytest.approx(4.50, abs=0.01)
+
+
+def test_compute_net_pay_returns_correct_types():
+    from payroll_engine import EmployeePayroll, EmployerBurden
+    emp, er = compute_net_pay(gross_pay=5_000)
+    assert isinstance(emp, EmployeePayroll)
+    assert isinstance(er, EmployerBurden)
