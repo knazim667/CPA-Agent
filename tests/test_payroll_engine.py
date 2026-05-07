@@ -77,3 +77,45 @@ def test_bracket_base_tax_consistency():
             assert abs(curr_base - expected) < 0.01, (
                 f"{status} bracket {i}: expected base_tax={expected}, got {curr_base}"
             )
+
+
+# ── Task 2: FIT percentage-method helper tests ────────────────────────────────
+
+from payroll_engine import _compute_annual_fit
+
+
+def test_fit_zero_wage():
+    assert _compute_annual_fit(0, "single") == 0.0
+    assert _compute_annual_fit(-100, "single") == 0.0
+
+
+def test_fit_single_10pct_bracket():
+    # $5,000 annual → 10% bracket (0 to 11,925)
+    result = _compute_annual_fit(5_000, "single")
+    assert result == pytest.approx(500.0, abs=0.01)
+
+
+def test_fit_single_22pct_bracket():
+    # $78,000 annual → 22% bracket (45,525 to 100,525)
+    # Corrected: 5224.50 + 0.22 * (78000 - 45525) = 5224.50 + 7144.50 = 12369.00
+    result = _compute_annual_fit(78_000, "single")
+    assert result == pytest.approx(12_369.00, abs=0.01)
+
+
+def test_fit_single_24pct_bracket():
+    # $112,700 annual → 24% bracket (100,525 to 191,950)
+    # Corrected: 17324.50 + 0.24 * (112700 - 100525) = 17324.50 + 2922.00 = 20246.50
+    result = _compute_annual_fit(112_700, "single")
+    assert result == pytest.approx(20_246.50, abs=0.01)
+
+
+def test_fit_married_10pct_bracket():
+    # $10,000 annual married → 10% bracket (0 to 23,850)
+    result = _compute_annual_fit(10_000, "married")
+    assert result == pytest.approx(1_000.0, abs=0.01)
+
+
+def test_fit_unknown_filing_status_falls_back_to_single():
+    result_single = _compute_annual_fit(50_000, "single")
+    result_unknown = _compute_annual_fit(50_000, "head_of_household")
+    assert result_single == result_unknown

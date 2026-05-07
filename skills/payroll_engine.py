@@ -36,6 +36,18 @@ _BRACKETS: dict[str, list[tuple]] = {
 }
 
 
+# ── Private helpers ──────────────────────────────────────────────────────────
+
+def _compute_annual_fit(annual_adjusted_wage: float, filing_status: str) -> float:
+    if annual_adjusted_wage <= 0:
+        return 0.0
+    brackets = _BRACKETS.get(filing_status, _BRACKETS["single"])
+    for upper, rate, floor, base_tax in brackets:
+        if annual_adjusted_wage <= upper:
+            return base_tax + rate * (annual_adjusted_wage - floor)
+    return 0.0
+
+
 @dataclass
 class EmployeePayroll:
     gross_pay: float
