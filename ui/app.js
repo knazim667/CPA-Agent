@@ -1975,13 +1975,13 @@ function fetchUsers() {
         var bizAccess = (u.role === 'owner') ? 'All businesses' :
           (u.business_keys && u.business_keys.length ? u.business_keys.join(', ') : 'None assigned');
         tr.innerHTML =
-          '<td>' + escapeHtml(u.username) + '</td>' +
-          '<td>' + escapeHtml(u.email) + '</td>' +
-          '<td><span class="role-badge role-' + u.role + '">' + u.role + '</span></td>' +
+          '<td>' + esc(u.username) + '</td>' +
+          '<td>' + esc(u.email) + '</td>' +
+          '<td><span class="role-badge role-' + esc(u.role) + '">' + esc(u.role) + '</span></td>' +
           '<td>' + (u.is_active
             ? '<span style="color:#10b981">Active</span>'
             : '<span style="color:#f87171">Inactive</span>') + '</td>' +
-          '<td>' + escapeHtml(bizAccess) + '</td>' +
+          '<td>' + esc(bizAccess) + '</td>' +
           '<td>' +
             '<button class="btn-sm" onclick="openEditUser(' + u.id + ')">Edit</button>' +
             (u.is_active
@@ -1990,15 +1990,8 @@ function fetchUsers() {
           '</td>';
         tbody.appendChild(tr);
       });
-    });
-}
-
-function escapeHtml(str) {
-  return String(str)
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
+    })
+    .catch(function(err) { console.error('fetchUsers error:', err); });
 }
 
 function openAddUser() {
@@ -2030,7 +2023,8 @@ function openEditUser(userId) {
       document.getElementById('user-modal-error').textContent = '';
       populateBusinessCheckboxes(u.business_keys || []);
       document.getElementById('user-modal').classList.remove('hidden');
-    });
+    })
+    .catch(function(err) { console.error('openEditUser error:', err); });
 }
 
 function populateBusinessCheckboxes(selected) {
@@ -2057,8 +2051,15 @@ function populateBusinessCheckboxes(selected) {
 function deactivateUser(userId) {
   if (!confirm('Disable this user? They will no longer be able to log in.')) { return; }
   fetch('/api/users/' + userId, { method: 'DELETE' })
-    .then(function (r) { return r.json(); })
-    .then(function () { fetchUsers(); });
+    .then(function(r) {
+      if (!r.ok) {
+        return r.json().then(function(d) {
+          alert(d.detail || 'Failed to disable user.');
+        });
+      }
+      return fetchUsers();
+    })
+    .catch(function(err) { console.error('deactivateUser error:', err); });
 }
 
 function initUsers() {
