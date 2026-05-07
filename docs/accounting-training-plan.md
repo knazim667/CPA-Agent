@@ -75,10 +75,9 @@ These are differences between what appears on the P&L (books) and what is deduct
 
 ---
 
-## Phase 2 — Depreciation Engine (New File)
+## Phase 2 — Depreciation Engine ✅ COMPLETED 2026-05-05
 
-**File to create:** `skills/depreciation_engine.py`
-**Estimated effort:** 1–2 hours
+**File created:** `skills/depreciation_engine.py`
 **Impact:** Agent can handle any asset purchase end-to-end
 
 ### What to build:
@@ -121,10 +120,9 @@ class DepreciationEngine:
 
 ---
 
-## Phase 3 — Inventory Engine (New File)
+## Phase 3 — Inventory Engine ✅ COMPLETED 2026-05-05
 
-**File to create:** `skills/inventory_engine.py`
-**Estimated effort:** 2–3 hours
+**File created:** `skills/inventory_engine.py`
 **Prerequisite:** Business must sell physical products (ask on setup)
 
 ### What to build:
@@ -234,7 +232,9 @@ Line 8:  Taxable income per return:         $XX,XXX
 
 ```
 ✅ Phase 1 (DONE)   → system_prompt.md — accrual, M-1, trust fund, inventory method, recapture, inter-company rules
-▶ Phase 2 (NEXT)   → Build skills/depreciation_engine.py
+✅ Phase 2 (DONE)   → skills/depreciation_engine.py — MACRS tables, 179, bonus, disposal recapture, mid-quarter
+✅ Phase 3 (DONE)   → skills/inventory_engine.py — FIFO/LIFO/WAC, landed cost, LCM impairment, LIFO reserve
+✅ Phase 4 (DONE)   → Update skills/payroll_engine.py — 401k/Section 125 pre-tax deductions, 2026 SS wage base
    Phase 3          → Build skills/inventory_engine.py (only if business sells physical goods)
    Phase 4          → Update skills/payroll_engine.py pre-tax deductions (401k, Section 125)
    Phase 5          → Build skills/m1_reconciler.py (before tax season)
