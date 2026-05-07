@@ -17,6 +17,7 @@ from payroll_engine import (
     ALLOWANCE_ANNUAL_VALUE,
     _BRACKETS,
     _compute_annual_fit,
+    _compute_fica_employee,
 )
 
 
@@ -118,3 +119,47 @@ def test_fit_unknown_filing_status_falls_back_to_single():
     result_single = _compute_annual_fit(50_000, "single")
     result_unknown = _compute_annual_fit(50_000, "head_of_household")
     assert result_single == result_unknown
+
+
+# ── Task 3: FICA employee helper tests ───────────────────────────────────────
+
+
+def test_fica_standard_no_ytd():
+    # fica_base=4800, ytd=0 → full SS + Medicare, no additional Medicare
+    ss, med, add_med = _compute_fica_employee(4_800, 0.0)
+    assert ss == pytest.approx(297.60, abs=0.01)
+    assert med == pytest.approx(69.60, abs=0.01)
+    assert add_med == 0.0
+
+
+def test_fica_ss_cap_mid_paycheck():
+    # ytd=184000, fica_base=1000 → only $500 is under the $184,500 cap
+    ss, med, add_med = _compute_fica_employee(1_000, 184_000)
+    assert ss == pytest.approx(31.00, abs=0.01)   # 500 * 0.062
+    assert med == pytest.approx(14.50, abs=0.01)  # 1000 * 0.0145
+
+
+def test_fica_ss_cap_fully_exceeded():
+    # ytd already at or above SS_WAGE_BASE → zero SS
+    ss, med, add_med = _compute_fica_employee(5_000, 184_500)
+    assert ss == 0.0
+    assert med == pytest.approx(72.50, abs=0.01)  # 5000 * 0.0145
+
+
+def test_fica_additional_medicare_crosses_threshold():
+    # ytd=199500, fica_base=1000 → $500 crosses $200k threshold
+    ss, med, add_med = _compute_fica_employee(1_000, 199_500)
+    # ytd_after = 200500; taxable_additional = 200500 - 200000 = 500
+    assert add_med == pytest.approx(4.50, abs=0.01)  # 500 * 0.009
+
+
+def test_fica_additional_medicare_fully_above_threshold():
+    # ytd=201000, fica_base=1000 → entire $1000 subject to additional Medicare
+    ss, med, add_med = _compute_fica_employee(1_000, 201_000)
+    assert add_med == pytest.approx(9.00, abs=0.01)  # 1000 * 0.009
+
+
+def test_fica_no_additional_medicare_below_threshold():
+    # ytd=0, low earner → no additional Medicare
+    _, _, add_med = _compute_fica_employee(5_000, 0.0)
+    assert add_med == 0.0

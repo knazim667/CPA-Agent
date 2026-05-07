@@ -55,6 +55,24 @@ def _compute_annual_fit(annual_adjusted_wage: float, filing_status: str) -> floa
     return 0.0
 
 
+def _compute_fica_employee(
+    fica_base: float, ytd_wages: float
+) -> tuple[float, float, float]:
+    ss_remaining = max(0.0, SS_WAGE_BASE - ytd_wages)
+    ss_taxable = min(fica_base, ss_remaining)
+    social_security = round(ss_taxable * SS_RATE, 2)
+    medicare = round(fica_base * MEDICARE_RATE, 2)
+
+    ytd_after = ytd_wages + fica_base
+    if ytd_after > ADDITIONAL_MEDICARE_THRESHOLD:
+        taxable_additional = ytd_after - max(ADDITIONAL_MEDICARE_THRESHOLD, ytd_wages)
+        additional_medicare = round(taxable_additional * ADDITIONAL_MEDICARE_RATE, 2)
+    else:
+        additional_medicare = 0.0
+
+    return social_security, medicare, additional_medicare
+
+
 @dataclass
 class EmployeePayroll:
     gross_pay: float
