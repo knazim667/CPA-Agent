@@ -99,3 +99,12 @@ class M1Reconciler:
         ys[field] = round(ys[field] + amount, 2)
         self.memory.save_m1_state(self._state)
         return adj_type
+
+    def record_depreciation_difference(
+        self, gaap_amount: float, macrs_amount: float, year: int | None = None
+    ) -> None:
+        yk = self._year_key(year)
+        ys = self._get_year_state(yk)
+        ys["gaap_depreciation_total"] = round(ys["gaap_depreciation_total"] + gaap_amount, 2)
+        ys["macrs_depreciation_total"] = round(ys["macrs_depreciation_total"] + macrs_amount, 2)
+        self.memory.save_m1_state(self._state)

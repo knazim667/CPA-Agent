@@ -228,3 +228,33 @@ def test_record_transaction_negative_amount_reduces_total():
     rec.record_transaction(500.0, "meals", 2026)
     rec.record_transaction(-100.0, "meals", 2026)  # refund
     assert mm._m1_state["2026"]["meals_total"] == pytest.approx(400.0)
+
+
+def test_record_depreciation_difference_stores_both_totals():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_depreciation_difference(8000.0, 12000.0, 2026)
+    state = mm._m1_state["2026"]
+    assert state["gaap_depreciation_total"] == 8000.0
+    assert state["macrs_depreciation_total"] == 12000.0
+
+
+def test_record_depreciation_difference_accumulates():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_depreciation_difference(5000.0, 8000.0, 2026)
+    rec.record_depreciation_difference(3000.0, 4000.0, 2026)
+    state = mm._m1_state["2026"]
+    assert state["gaap_depreciation_total"] == pytest.approx(8000.0)
+    assert state["macrs_depreciation_total"] == pytest.approx(12000.0)
+
+
+def test_record_depreciation_difference_persists_state():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_depreciation_difference(1000.0, 2000.0, 2026)
+    # Simulate reload from persistence
+    rec2 = M1Reconciler(mm)
+    summary = rec2.get_ytd_summary(2026)
+    assert summary["gaap_depreciation_total"] == 1000.0
+    assert summary["macrs_depreciation_total"] == 2000.0
