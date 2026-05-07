@@ -56,3 +56,70 @@ def test_memory_manager_save_and_load_m1_category_map_roundtrip(mm_with_business
     mm_with_business.save_m1_category_map(data)
     loaded = mm_with_business.load_m1_category_map()
     assert loaded == data
+
+
+from m1_reconciler import (
+    M1Draft,
+    M1Reconciler,
+    VALID_ADJUSTMENT_TYPES,
+    _DEFAULT_CATEGORY_MAP,
+)
+
+
+class MockMemoryManager:
+    """In-memory stand-in for MemoryManager used across all M-1 tests."""
+    def __init__(self):
+        self._m1_state: dict = {}
+        self._m1_map: dict = {}
+
+    def load_m1_state(self) -> dict:
+        return dict(self._m1_state)
+
+    def save_m1_state(self, data: dict) -> None:
+        self._m1_state = dict(data)
+
+    def load_m1_category_map(self) -> dict:
+        return dict(self._m1_map)
+
+    def save_m1_category_map(self, data: dict) -> None:
+        self._m1_map = dict(data)
+
+
+def test_valid_adjustment_types_contains_expected():
+    assert "meals_50pct" in VALID_ADJUSTMENT_TYPES
+    assert "fines" in VALID_ADJUSTMENT_TYPES
+    assert "officer_life_insurance" in VALID_ADJUSTMENT_TYPES
+    assert "federal_income_tax" in VALID_ADJUSTMENT_TYPES
+    assert "other_nondeductible" in VALID_ADJUSTMENT_TYPES
+
+
+def test_default_category_map_meals():
+    assert _DEFAULT_CATEGORY_MAP["meals"] == "meals_50pct"
+    assert _DEFAULT_CATEGORY_MAP["entertainment"] == "meals_50pct"
+
+
+def test_default_category_map_fines():
+    assert _DEFAULT_CATEGORY_MAP["fines"] == "fines"
+    assert _DEFAULT_CATEGORY_MAP["penalties"] == "fines"
+
+
+def test_m1draft_fields():
+    draft = M1Draft(
+        year=2026,
+        entity_type="s_corp",
+        line1_book_income=45000.0,
+        line2_federal_tax=0.0,
+        line5a_meals_disallowed=600.0,
+        line5b_depreciation_diff=-4000.0,
+        line7_other_nondeductible=2900.0,
+        line8_taxable_income=44500.0,
+        formatted="test",
+    )
+    assert draft.year == 2026
+    assert draft.line8_taxable_income == 44500.0
+
+
+def test_m1_reconciler_initialises_from_empty_memory():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    assert rec is not None
