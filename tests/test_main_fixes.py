@@ -1,5 +1,6 @@
 from __future__ import annotations
 from unittest.mock import MagicMock, patch
+from skills.categorization_engine import CategorizationEngine
 
 
 def make_agent():
@@ -221,3 +222,37 @@ def test_detect_split_command_no_match_with_split_word():
     agent = make_agent()
     # "split" is present but pattern doesn't match (no colon-delimited splits)
     assert agent.detect_split_command("split evenly between parties") is None
+
+
+# ── handle_command_with_metadata split integration ─────────────────────────
+
+
+def test_handle_command_routes_split_command():
+    agent = make_agent()
+    agent.categorization = CategorizationEngine()
+    agent.get_status = MagicMock(return_value={})
+    agent.record_bulk_transactions = MagicMock(
+        return_value={"ok": True, "message": "Split transaction recorded."}
+    )
+
+    result = agent.handle_command_with_metadata(
+        "split this $200 Amazon charge: $100 office supplies, $100 inventory"
+    )
+
+    agent.record_bulk_transactions.assert_called_once()
+    rows = agent.record_bulk_transactions.call_args[0][0]
+    assert len(rows) == 2
+    assert "Split transaction recorded" in result["message"]
+
+
+def test_handle_command_split_mismatch_returns_error():
+    agent = make_agent()
+    agent.categorization = CategorizationEngine()
+    agent.get_status = MagicMock(return_value={})
+
+    # $200 total but $110 + $100 = $210 — mismatch
+    result = agent.handle_command_with_metadata(
+        "split this $200 Amazon charge: $110 office supplies, $100 inventory"
+    )
+
+    assert "do not match total" in result["message"]

@@ -1525,6 +1525,28 @@ class CPAAgent:
             self.update_short_term_memory(user_input, {"message": result["message"]})
             return {"message": result["message"], "status": self.get_status(), "presentation": None}
 
+        split_cmd = self.detect_split_command(user_input)
+        if split_cmd:
+            try:
+                rows = self.categorization.split_transaction(
+                    split_cmd["total_amount"],
+                    split_cmd["splits"],
+                    date=date.today().isoformat(),
+                    parent_description=split_cmd["parent_description"],
+                )
+                result = self.record_bulk_transactions(rows)
+                return {
+                    "message": result.get("message", "Split transaction recorded."),
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+            except ValueError as exc:
+                return {
+                    "message": str(exc),
+                    "status": self.get_status(),
+                    "presentation": None,
+                }
+
         # Budget command check (runs before recurring to avoid false matches)
         budget_cmd = self.detect_budget_command(user_input)
         if budget_cmd:
