@@ -139,6 +139,7 @@ def test_add_category_mapping_accepts_valid_type():
     mm = MockMemoryManager()
     rec = M1Reconciler(mm)
     rec.add_category_mapping("club_dues", "other_nondeductible")
+    assert rec._custom_map["club_dues"] == "other_nondeductible"
     assert mm._m1_map["club_dues"] == "other_nondeductible"
 
 
@@ -163,6 +164,7 @@ def test_get_ytd_summary_returns_zeros_for_unknown_year():
     assert summary["meals_total"] == 0.0
     assert summary["gaap_depreciation_total"] == 0.0
     assert set(summary.keys()) == set(_ZERO_YEAR_STATE.keys())
+    assert rec._state == {}  # unknown year must not pollute state
 
 
 def test_get_ytd_summary_returns_recorded_totals():

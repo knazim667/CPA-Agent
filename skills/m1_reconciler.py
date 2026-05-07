@@ -68,7 +68,7 @@ class M1Reconciler:
                 f"Valid values: {sorted(VALID_ADJUSTMENT_TYPES)}"
             )
         self._custom_map[category.strip().lower()] = adjustment_type
-        self.memory.save_m1_category_map(self._custom_map)
+        self.memory.save_m1_category_map(dict(self._custom_map))
 
     def get_ytd_summary(self, year: int | None = None) -> dict[str, float]:
         yk = self._year_key(year)
