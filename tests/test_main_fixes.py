@@ -154,3 +154,54 @@ def test_ocr_returns_message_when_tesseract_binary_missing(tmp_path, mocker):
     Image.new("RGB", (10, 10), color="white").save(img_path)
     result = processor.extract_document(img_path)
     assert "OCR unavailable" in result["text"]
+
+
+# ── detect_split_command ───────────────────────────────────────────────────────
+
+
+def test_detect_split_command_happy_path():
+    agent = make_agent()
+    result = agent.detect_split_command(
+        "split this $200 Amazon charge: $100 office supplies, $100 inventory"
+    )
+    assert result is not None
+    assert result["total_amount"] == 200.0
+    assert result["parent_description"] == "Amazon charge"
+    assert len(result["splits"]) == 2
+    assert result["splits"][0]["amount"] == 100.0
+    assert result["splits"][0]["category"] == "Office Supplies"
+    assert result["splits"][1]["category"] == "Inventory"
+
+
+def test_detect_split_command_three_way_split():
+    agent = make_agent()
+    result = agent.detect_split_command(
+        "split $300 Amazon: $150 supplies, $100 equipment, $50 meals"
+    )
+    assert result is not None
+    assert len(result["splits"]) == 3
+
+
+def test_detect_split_command_with_comma_amount():
+    agent = make_agent()
+    result = agent.detect_split_command(
+        "split this $1,500 contractor invoice: $900 labor, $600 materials"
+    )
+    assert result is not None
+    assert result["total_amount"] == 1500.0
+    assert len(result["splits"]) == 2
+
+
+def test_detect_split_command_no_match():
+    agent = make_agent()
+    assert agent.detect_split_command("record $200 office supplies") is None
+
+
+def test_detect_split_command_amounts_parsed_as_floats():
+    agent = make_agent()
+    result = agent.detect_split_command(
+        "split $100 Staples: $75.50 supplies, $24.50 equipment"
+    )
+    assert result is not None
+    assert isinstance(result["splits"][0]["amount"], float)
+    assert result["splits"][0]["amount"] == 75.50

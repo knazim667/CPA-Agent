@@ -1466,6 +1466,36 @@ class CPAAgent:
             return {"action": "delete_duplicates"}
         return None
 
+    def detect_split_command(self, user_input: str) -> dict | None:
+        if "split" not in user_input.lower():
+            return None
+        m = re.search(
+            r"split\s+(?:this\s+)?\$?([\d,]+(?:\.\d{1,2})?)\s+([^:]+):\s*(.+)",
+            user_input,
+            re.IGNORECASE,
+        )
+        if not m:
+            return None
+        total = float(m.group(1).replace(",", ""))
+        parent_desc = m.group(2).strip()
+        splits = []
+        for sm in re.finditer(
+            r"\$?([\d,]+(?:\.\d{1,2})?)\s+([^,$]+)", m.group(3)
+        ):
+            label = sm.group(2).strip().rstrip(",")
+            splits.append(
+                {
+                    "amount": float(sm.group(1).replace(",", "")),
+                    "category": label.title(),
+                    "description": f"{parent_desc} - {label}",
+                }
+            )
+        return (
+            {"total_amount": total, "parent_description": parent_desc, "splits": splits}
+            if splits
+            else None
+        )
+
     def delete_duplicate_ledger_rows(self) -> dict[str, Any]:
         profile = self.memory.get_current_business()
         spreadsheet_id = profile.get("google_sheet_id")
