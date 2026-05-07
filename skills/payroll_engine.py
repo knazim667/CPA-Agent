@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import logging
 
 # ── 2026 payroll constants ──────────────────────────────────────────────────
 SS_WAGE_BASE = 184_500
@@ -38,10 +39,16 @@ _BRACKETS: dict[str, list[tuple]] = {
 
 # ── Private helpers ──────────────────────────────────────────────────────────
 
+_logger = logging.getLogger(__name__)
+
+
 def _compute_annual_fit(annual_adjusted_wage: float, filing_status: str) -> float:
     if annual_adjusted_wage <= 0:
         return 0.0
-    brackets = _BRACKETS.get(filing_status, _BRACKETS["single"])
+    brackets = _BRACKETS.get(filing_status)
+    if brackets is None:
+        _logger.warning("Unknown filing_status %r; defaulting to 'single'", filing_status)
+        brackets = _BRACKETS["single"]
     for upper, rate, floor, base_tax in brackets:
         if annual_adjusted_wage <= upper:
             return base_tax + rate * (annual_adjusted_wage - floor)

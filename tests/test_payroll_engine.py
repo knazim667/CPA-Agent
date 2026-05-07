@@ -16,6 +16,7 @@ from payroll_engine import (
     FUTA_NET_RATE,
     ALLOWANCE_ANNUAL_VALUE,
     _BRACKETS,
+    _compute_annual_fit,
 )
 
 
@@ -80,8 +81,6 @@ def test_bracket_base_tax_consistency():
 
 
 # ── Task 2: FIT percentage-method helper tests ────────────────────────────────
-
-from payroll_engine import _compute_annual_fit
 
 
 def test_fit_zero_wage():
