@@ -1801,7 +1801,7 @@ class CPAAgent:
             }
             lines = "\n".join(f"  {k}: {v}" for k, v in fields.items())
             return {
-                "message": f"Business profile for {profile['business_name']}:\n{lines}",
+                "message": f"Business profile for {profile.get('business_name', 'Unknown Business')}:\n{lines}",
                 "status": self.get_status(),
                 "presentation": None,
             }
@@ -1819,8 +1819,11 @@ class CPAAgent:
             if matched:
                 self.memory.update_business_profile(self.memory.current_business_key, {"industry": matched})
                 return {"message": f"Industry set to {matched}.", "status": self.get_status(), "presentation": None}
+            else:
+                return {"message": "Industry not recognized. Valid options: e_commerce, import_export, professional_services, retail, construction, healthcare, content_creator, manufacturing.", "status": self.get_status(), "presentation": None}
 
-        elif "set legal structure" in cmd_lower or "change legal structure" in cmd_lower or "s-corp" in cmd_lower or "s corp" in cmd_lower:
+        elif ("set legal structure" in cmd_lower or "change legal structure" in cmd_lower or
+              (("s-corp" in cmd_lower or "s corp" in cmd_lower) and ("set" in cmd_lower or "change" in cmd_lower or "elect" in cmd_lower))):
             structures = {"single_member_llc": ["single member", "single-member"],
                           "multi_member_llc": ["multi member", "multi-member"],
                           "s_corp": ["s-corp", "s corp", "scorp"],
@@ -1834,6 +1837,8 @@ class CPAAgent:
             if matched_struct:
                 self.memory.update_business_profile(self.memory.current_business_key, {"legal_structure": matched_struct})
                 return {"message": f"Legal structure updated to {matched_struct}.", "status": self.get_status(), "presentation": None}
+            else:
+                return {"message": "Legal structure not recognized. Valid options: single_member_llc, multi_member_llc, s_corp, partnership, sole_proprietor.", "status": self.get_status(), "presentation": None}
 
         message = self.handle_command(user_input)
         status = self.get_status()
