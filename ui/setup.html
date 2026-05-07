@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>CPA-Agent — Setup</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Outfit',sans-serif;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#f1f5f9}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:2.5rem;width:100%;max-width:420px}
+    h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
+    .subtitle{color:#94a3b8;font-size:.875rem;margin-bottom:2rem}
+    label{display:block;font-size:.8rem;color:#94a3b8;margin-bottom:.4rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+    input{width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.65rem .9rem;color:#f1f5f9;font-size:.95rem;margin-bottom:1.25rem}
+    input:focus{outline:none;border-color:#10b981}
+    button{width:100%;background:#10b981;color:#fff;border:none;border-radius:8px;padding:.75rem;font-size:1rem;font-weight:600;cursor:pointer}
+    button:hover{background:#059669}
+    #error{color:#f87171;font-size:.85rem;margin-top:.75rem;text-align:center;min-height:1.2em}
+    .notice{background:#1e3a5f;border:1px solid #1d4ed8;border-radius:8px;padding:.75rem;font-size:.8rem;color:#93c5fd;margin-bottom:1.5rem}
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🧾 CPA-Agent Setup</h1>
+  <p class="subtitle">Create your owner account to get started</p>
+  <div class="notice">This page only appears once. After setup it will be permanently disabled.</div>
+  <form id="setup-form">
+    <label for="username">Username</label>
+    <input id="username" type="text" autocomplete="username" required/>
+    <label for="email">Email</label>
+    <input id="email" type="email" autocomplete="email" required/>
+    <label for="password">Password (min 8 characters)</label>
+    <input id="password" type="password" autocomplete="new-password" required minlength="8"/>
+    <label for="confirm">Confirm Password</label>
+    <input id="confirm" type="password" autocomplete="new-password" required minlength="8"/>
+    <button type="submit">Create Owner Account</button>
+    <p id="error"></p>
+  </form>
+</div>
+<script>
+document.getElementById('setup-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('error');
+  errEl.textContent = '';
+  var password = document.getElementById('password').value;
+  var confirm  = document.getElementById('confirm').value;
+  if (password !== confirm) { errEl.textContent = 'Passwords do not match.'; return; }
+  try {
+    var r = await fetch('/api/setup/create-owner', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({
+        username: document.getElementById('username').value.trim(),
+        email:    document.getElementById('email').value.trim(),
+        password: password,
+        role:     'owner'
+      })
+    });
+    if (r.ok) {
+      window.location.href = '/';
+    } else {
+      var d = await r.json();
+      errEl.textContent = d.detail || 'Setup failed.';
+    }
+  } catch(err) {
+    errEl.textContent = 'Network error. Please try again.';
+  }
+});
+</script>
+</body>
+</html>

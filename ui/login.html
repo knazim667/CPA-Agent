@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>CPA-Agent — Sign In</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Outfit',sans-serif;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#f1f5f9}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:2.5rem;width:100%;max-width:400px}
+    h1{font-size:1.5rem;font-weight:700;margin-bottom:.25rem}
+    .subtitle{color:#94a3b8;font-size:.875rem;margin-bottom:2rem}
+    label{display:block;font-size:.8rem;color:#94a3b8;margin-bottom:.4rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+    input{width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.65rem .9rem;color:#f1f5f9;font-size:.95rem;margin-bottom:1.25rem}
+    input:focus{outline:none;border-color:#6366f1}
+    button{width:100%;background:#6366f1;color:#fff;border:none;border-radius:8px;padding:.75rem;font-size:1rem;font-weight:600;cursor:pointer}
+    button:hover{background:#4f46e5}
+    #error{color:#f87171;font-size:.85rem;margin-top:.75rem;text-align:center;min-height:1.2em}
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>🧾 CPA-Agent</h1>
+  <p class="subtitle">Sign in to your account</p>
+  <form id="login-form">
+    <label for="username">Username</label>
+    <input id="username" type="text" autocomplete="username" required/>
+    <label for="password">Password</label>
+    <input id="password" type="password" autocomplete="current-password" required/>
+    <button type="submit">Sign In</button>
+    <p id="error"></p>
+  </form>
+</div>
+<script>
+document.getElementById('login-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('error');
+  errEl.textContent = '';
+  var username = document.getElementById('username').value.trim();
+  var password = document.getElementById('password').value;
+  try {
+    var r = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({username: username, password: password})
+    });
+    if (r.ok) {
+      window.location.href = '/';
+    } else {
+      var d = await r.json();
+      errEl.textContent = d.detail || 'Login failed.';
+    }
+  } catch(err) {
+    errEl.textContent = 'Network error. Please try again.';
+  }
+});
+</script>
+</body>
+</html>
