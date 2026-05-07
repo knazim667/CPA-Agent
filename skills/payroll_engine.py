@@ -73,6 +73,25 @@ def _compute_fica_employee(
     return social_security, medicare, additional_medicare
 
 
+def _compute_employer_taxes(
+    gross_pay: float,
+    fica_base: float,
+    ytd_wages: float,
+    suta_rate: float,
+) -> tuple[float, float, float, float]:
+    ss_remaining = max(0.0, SS_WAGE_BASE - ytd_wages)
+    ss_taxable = min(fica_base, ss_remaining)
+    ss_match = round(ss_taxable * SS_RATE, 2)
+    medicare_match = round(fica_base * MEDICARE_RATE, 2)
+
+    futa_remaining = max(0.0, FUTA_WAGE_BASE - ytd_wages)
+    futa_taxable = min(gross_pay, futa_remaining)
+    futa = round(futa_taxable * FUTA_NET_RATE, 2)
+    suta = round(futa_taxable * suta_rate, 2)
+
+    return ss_match, medicare_match, futa, suta
+
+
 @dataclass
 class EmployeePayroll:
     gross_pay: float
