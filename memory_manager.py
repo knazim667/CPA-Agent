@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import copy
 import json
 import time
 from pathlib import Path
@@ -126,7 +127,7 @@ class MemoryManager:
 
         db_name = f"{business_key}.db"
         profile = {
-            **PROFILE_DEFAULTS,
+            **copy.deepcopy(PROFILE_DEFAULTS),
             "business_name": cleaned_name,
             "google_sheet_id": "replace-with-sheet-id",
             "google_doc_id": "replace-with-doc-id",
@@ -336,9 +337,9 @@ class MemoryManager:
                 changed = False
                 for field, default in PROFILE_DEFAULTS.items():
                     if field not in profile:
-                        profile[field] = default
+                        profile[field] = copy.deepcopy(default)
                         changed = True
                 if changed:
                     self.save_business_profile(key, profile)
-            except Exception:  # noqa: BLE001
+            except (FileNotFoundError, json.JSONDecodeError):
                 pass

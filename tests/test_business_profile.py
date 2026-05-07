@@ -62,3 +62,11 @@ def test_update_business_profile_partial(mm):
     assert updated["industry"] == "retail"
     assert updated["accounting_basis"] == "accrual"
     assert updated["business_name"] == "Old Biz"  # unchanged
+
+
+def test_create_business_defaults_are_not_aliased(mm):
+    _, p1, _ = mm.create_business("Biz One")
+    _, p2, _ = mm.create_business("Biz Two")
+    p1["operating_states"].append("CA")
+    assert "CA" not in p2["operating_states"]
+    assert "CA" not in PROFILE_DEFAULTS["operating_states"]
