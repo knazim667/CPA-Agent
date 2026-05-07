@@ -1534,18 +1534,20 @@ class CPAAgent:
                     date=date.today().isoformat(),
                     parent_description=split_cmd["parent_description"],
                 )
-                result = self.record_bulk_transactions(rows)
-                return {
-                    "message": result.get("message", "Split transaction recorded."),
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
             except ValueError as exc:
                 return {
                     "message": str(exc),
                     "status": self.get_status(),
                     "presentation": None,
                 }
+            result = self.record_bulk_transactions(rows)
+            msg = result["message"]
+            self.update_short_term_memory(user_input, {"message": msg})
+            return {
+                "message": msg,
+                "status": self.get_status(),
+                "presentation": None,
+            }
 
         # Budget command check (runs before recurring to avoid false matches)
         budget_cmd = self.detect_budget_command(user_input)
