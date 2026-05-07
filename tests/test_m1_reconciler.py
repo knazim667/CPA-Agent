@@ -258,3 +258,85 @@ def test_record_depreciation_difference_persists_state():
     summary = rec2.get_ytd_summary(2026)
     assert summary["gaap_depreciation_total"] == 1000.0
     assert summary["macrs_depreciation_total"] == 2000.0
+
+
+def _make_reconciler_with_data(mm=None) -> M1Reconciler:
+    """Helper: reconciler pre-loaded with a standard set of 2026 adjustments."""
+    if mm is None:
+        mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_transaction(1200.0, "meals", 2026)           # meals_total=1200
+    rec.record_transaction(500.0, "fines", 2026)            # fines_total=500
+    rec.record_transaction(2400.0, "officer_life_insurance", 2026)  # officer_life=2400
+    rec.record_depreciation_difference(8000.0, 12000.0, 2026)      # gaap=8000, macrs=12000
+    return rec
+
+
+def test_generate_draft_empty_state_line8_equals_line1():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    draft = rec.generate_draft(50000.0, entity_type="s_corp", year=2026)
+    assert draft.line1_book_income == 50000.0
+    assert draft.line2_federal_tax == 0.0
+    assert draft.line5a_meals_disallowed == 0.0
+    assert draft.line5b_depreciation_diff == 0.0
+    assert draft.line7_other_nondeductible == 0.0
+    assert draft.line8_taxable_income == 50000.0
+
+
+def test_generate_draft_s_corp_correct_math():
+    rec = _make_reconciler_with_data()
+    draft = rec.generate_draft(45000.0, entity_type="s_corp", year=2026)
+    assert draft.entity_type == "s_corp"
+    assert draft.line2_federal_tax == 0.0                        # S-Corp: no line 2
+    assert draft.line5a_meals_disallowed == pytest.approx(600.0)  # 1200 * 0.50
+    assert draft.line5b_depreciation_diff == pytest.approx(-4000.0)  # 8000 - 12000
+    assert draft.line7_other_nondeductible == pytest.approx(2900.0)  # 500 + 2400
+    # line8 = 45000 + 0 + 600 + (-4000) + 2900 = 44500
+    assert draft.line8_taxable_income == pytest.approx(44500.0)
+
+
+def test_generate_draft_c_corp_includes_line2():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.record_transaction(5000.0, "federal_income_tax", 2026)
+    draft = rec.generate_draft(45000.0, entity_type="c_corp", year=2026)
+    assert draft.entity_type == "c_corp"
+    assert draft.line2_federal_tax == 5000.0
+    # line8 = 45000 + 5000 + 0 + 0 + 0 = 50000
+    assert draft.line8_taxable_income == pytest.approx(50000.0)
+
+
+def test_generate_draft_invalid_entity_type_raises():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    with pytest.raises(ValueError, match="entity_type"):
+        rec.generate_draft(10000.0, entity_type="partnership", year=2026)
+
+
+def test_generate_draft_returns_m1draft_instance():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    draft = rec.generate_draft(10000.0, year=2026)
+    assert isinstance(draft, M1Draft)
+    assert draft.year == 2026
+    assert isinstance(draft.formatted, str)
+    assert len(draft.formatted) > 0
+
+
+def test_generate_draft_formatted_contains_line_labels():
+    rec = _make_reconciler_with_data()
+    draft = rec.generate_draft(45000.0, entity_type="s_corp", year=2026)
+    assert "Line 1" in draft.formatted
+    assert "Line 5a" in draft.formatted
+    assert "Line 5b" in draft.formatted
+    assert "Line 7" in draft.formatted
+    assert "Line 8" in draft.formatted
+    assert "Line 2" not in draft.formatted   # S-Corp: line 2 omitted
+
+
+def test_generate_draft_c_corp_formatted_includes_line2():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    draft = rec.generate_draft(10000.0, entity_type="c_corp", year=2026)
+    assert "Line 2" in draft.formatted

@@ -47,6 +47,36 @@ class M1Draft:
     formatted: str
 
 
+def _format_m1(
+    year: int,
+    entity_type: str,
+    l1: float,
+    l2: float,
+    l5a: float,
+    l5b: float,
+    l7: float,
+    l8: float,
+) -> str:
+    label = "C-Corp" if entity_type == "c_corp" else "S-Corp"
+    title = f"Schedule M-1 Draft ({year} — {label})"
+    sep = "=" * len(title)
+
+    def fmt(v: float) -> str:
+        if v < 0:
+            return f"({abs(v):>11,.2f})"
+        return f" {v:>11,.2f}"
+
+    rows = [title, sep]
+    rows.append(f"Line 1:  Net income per books:              {fmt(l1)}")
+    if entity_type == "c_corp":
+        rows.append(f"Line 2:  Federal income tax:                {fmt(l2)}")
+    rows.append(f"Line 5a: Meals & entertainment (50% limit): {fmt(l5a)}")
+    rows.append(f"Line 5b: Depreciation timing difference:    {fmt(l5b)}")
+    rows.append(f"Line 7:  Other non-deductible expenses:     {fmt(l7)}")
+    rows.append(f"Line 8:  Taxable income per return:         {fmt(l8)}")
+    return "\n".join(rows)
+
+
 class M1Reconciler:
     _ADJUSTMENT_FIELD: dict[str, str] = {
         "meals_50pct": "meals_total",
@@ -108,3 +138,42 @@ class M1Reconciler:
         ys["gaap_depreciation_total"] = round(ys["gaap_depreciation_total"] + gaap_amount, 2)
         ys["macrs_depreciation_total"] = round(ys["macrs_depreciation_total"] + macrs_amount, 2)
         self.memory.save_m1_state(self._state)
+
+    def generate_draft(
+        self,
+        book_net_income: float,
+        entity_type: str = "s_corp",
+        year: int | None = None,
+    ) -> M1Draft:
+        et = entity_type.lower()
+        if et not in ("c_corp", "s_corp"):
+            raise ValueError(
+                f"entity_type must be 'c_corp' or 's_corp', got {entity_type!r}"
+            )
+        yk = self._year_key(year)
+        yr = int(yk)
+        ys = self.get_ytd_summary(yr)
+
+        line1 = round(book_net_income, 2)
+        line2 = round(ys["federal_income_tax_total"], 2) if et == "c_corp" else 0.0
+        line5a = round(ys["meals_total"] * 0.50, 2)
+        line5b = round(ys["gaap_depreciation_total"] - ys["macrs_depreciation_total"], 2)
+        line7 = round(
+            ys["fines_total"]
+            + ys["officer_life_insurance_total"]
+            + ys["other_nondeductible_total"],
+            2,
+        )
+        line8 = round(line1 + line2 + line5a + line5b + line7, 2)
+
+        return M1Draft(
+            year=yr,
+            entity_type=et,
+            line1_book_income=line1,
+            line2_federal_tax=line2,
+            line5a_meals_disallowed=line5a,
+            line5b_depreciation_diff=line5b,
+            line7_other_nondeductible=line7,
+            line8_taxable_income=line8,
+            formatted=_format_m1(yr, et, line1, line2, line5a, line5b, line7, line8),
+        )
