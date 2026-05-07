@@ -1784,6 +1784,57 @@ class CPAAgent:
                     "presentation": None,
                 }
 
+        # Profile read
+        cmd_lower = user_input.lower()
+        if any(phrase in cmd_lower for phrase in ["what industry", "what is the industry", "what legal structure", "what accounting basis", "show profile", "business profile"]):
+            biz_key = self.memory.current_business_key
+            profile = self.memory.load_business_profile(biz_key)
+            fields = {
+                "Business Name": profile.get("business_name", ""),
+                "Legal Structure": profile.get("legal_structure", "") or "Not set",
+                "Industry": profile.get("industry", "") or "Not set",
+                "Business Model": profile.get("business_model", "") or "Not set",
+                "Accounting Basis": profile.get("accounting_basis", ""),
+                "Inventory Method": profile.get("inventory_method", ""),
+                "State": profile.get("state", ""),
+                "EIN": profile.get("federal_ein", "") or "Not set",
+            }
+            lines = "\n".join(f"  {k}: {v}" for k, v in fields.items())
+            return {
+                "message": f"Business profile for {profile['business_name']}:\n{lines}",
+                "status": self.get_status(),
+                "presentation": None,
+            }
+
+        # Profile update commands
+        elif "set accounting basis" in cmd_lower or "change accounting basis" in cmd_lower:
+            basis = "accrual" if "accrual" in cmd_lower else "cash"
+            self.memory.update_business_profile(self.memory.current_business_key, {"accounting_basis": basis})
+            return {"message": f"Accounting basis updated to {basis}.", "status": self.get_status(), "presentation": None}
+
+        elif "set industry" in cmd_lower or "change industry" in cmd_lower:
+            industries = ["e_commerce", "import_export", "professional_services", "retail",
+                          "construction", "healthcare", "content_creator", "manufacturing"]
+            matched = next((i for i in industries if i.replace("_", " ") in cmd_lower or i in cmd_lower), None)
+            if matched:
+                self.memory.update_business_profile(self.memory.current_business_key, {"industry": matched})
+                return {"message": f"Industry set to {matched}.", "status": self.get_status(), "presentation": None}
+
+        elif "set legal structure" in cmd_lower or "change legal structure" in cmd_lower or "s-corp" in cmd_lower or "s corp" in cmd_lower:
+            structures = {"single_member_llc": ["single member", "single-member"],
+                          "multi_member_llc": ["multi member", "multi-member"],
+                          "s_corp": ["s-corp", "s corp", "scorp"],
+                          "partnership": ["partnership"],
+                          "sole_proprietor": ["sole proprietor"]}
+            matched_struct = None
+            for key, aliases in structures.items():
+                if any(a in cmd_lower for a in aliases):
+                    matched_struct = key
+                    break
+            if matched_struct:
+                self.memory.update_business_profile(self.memory.current_business_key, {"legal_structure": matched_struct})
+                return {"message": f"Legal structure updated to {matched_struct}.", "status": self.get_status(), "presentation": None}
+
         message = self.handle_command(user_input)
         status = self.get_status()
         conversation = status.get("conversation", [])
