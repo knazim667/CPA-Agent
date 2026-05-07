@@ -479,7 +479,7 @@ def export_ledger_pdf(
                 if (not from_date or str(r[0]).strip() >= from_date)
                 and (not to_date or str(r[0]).strip() <= to_date)
             ]
-        norm = [agent._normalize_row(r) for r in data_rows]
+        norm = [agent._normalize_row(r) for r in data_rows if isinstance(r, list)]
         subtitle = f"{from_date or 'start'} — {to_date or 'today'}" if (from_date or to_date) else ""
         pdf_bytes = generate_table_pdf(
             title="General Ledger",
@@ -520,7 +520,7 @@ def export_pl_pdf(
         income_rows = [[r[2], f"${agent._safe_float(r[3]):.2f}"] for r in data_rows if len(r) >= 5 and str(r[4]).strip().lower() == "income"]
         expense_rows = [[r[2], f"${agent._safe_float(r[3]):.2f}"] for r in data_rows if len(r) >= 5 and str(r[4]).strip().lower() != "income"]
         all_rows = [["INCOME", ""]] + income_rows + [["EXPENSES", ""]] + expense_rows
-        subtitle = f"{from_date or 'start'} — {to_date or 'today'}"
+        subtitle = f"{from_date or 'start'} — {to_date or 'today'}" if (from_date or to_date) else ""
         pdf_bytes = generate_table_pdf(
             title="Profit & Loss",
             headers=["Category", "Amount"],
