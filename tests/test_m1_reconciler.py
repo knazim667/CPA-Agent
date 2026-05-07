@@ -16,6 +16,7 @@ from m1_reconciler import (
     M1Reconciler,
     VALID_ADJUSTMENT_TYPES,
     _DEFAULT_CATEGORY_MAP,
+    _ZERO_YEAR_STATE,
 )
 
 
@@ -132,3 +133,41 @@ def test_m1_reconciler_initialises_from_empty_memory():
     rec = M1Reconciler(mm)
     assert rec._state == {}
     assert rec._custom_map == {}
+
+
+def test_add_category_mapping_accepts_valid_type():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.add_category_mapping("club_dues", "other_nondeductible")
+    assert mm._m1_map["club_dues"] == "other_nondeductible"
+
+
+def test_add_category_mapping_rejects_invalid_type():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    with pytest.raises(ValueError, match="Invalid adjustment_type"):
+        rec.add_category_mapping("club_dues", "not_a_real_type")
+
+
+def test_add_category_mapping_normalises_category_to_lowercase():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    rec.add_category_mapping("Club Dues", "other_nondeductible")
+    assert "club dues" in mm._m1_map
+
+
+def test_get_ytd_summary_returns_zeros_for_unknown_year():
+    mm = MockMemoryManager()
+    rec = M1Reconciler(mm)
+    summary = rec.get_ytd_summary(2026)
+    assert summary["meals_total"] == 0.0
+    assert summary["gaap_depreciation_total"] == 0.0
+    assert set(summary.keys()) == set(_ZERO_YEAR_STATE.keys())
+
+
+def test_get_ytd_summary_returns_recorded_totals():
+    mm = MockMemoryManager()
+    mm._m1_state = {"2026": {**_ZERO_YEAR_STATE, "meals_total": 1200.0}}
+    rec = M1Reconciler(mm)
+    summary = rec.get_ytd_summary(2026)
+    assert summary["meals_total"] == 1200.0

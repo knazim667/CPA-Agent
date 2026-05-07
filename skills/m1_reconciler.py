@@ -60,3 +60,18 @@ class M1Reconciler:
         if year_key not in self._state:
             self._state[year_key] = dict(_ZERO_YEAR_STATE)
         return self._state[year_key]
+
+    def add_category_mapping(self, category: str, adjustment_type: str) -> None:
+        if adjustment_type not in VALID_ADJUSTMENT_TYPES:
+            raise ValueError(
+                f"Invalid adjustment_type {adjustment_type!r}. "
+                f"Valid values: {sorted(VALID_ADJUSTMENT_TYPES)}"
+            )
+        self._custom_map[category.strip().lower()] = adjustment_type
+        self.memory.save_m1_category_map(self._custom_map)
+
+    def get_ytd_summary(self, year: int | None = None) -> dict[str, float]:
+        yk = self._year_key(year)
+        if yk not in self._state:
+            return dict(_ZERO_YEAR_STATE)
+        return dict(self._state[yk])
