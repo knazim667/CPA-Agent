@@ -14,11 +14,13 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.responses import FileResponse
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Request, UploadFile
+from fastapi.responses import FileResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
+from starlette.middleware.sessions import SessionMiddleware
 
+from auth import UserManager, get_current_user, require_owner, require_owner_or_bookkeeper
 from main import CPAAgent
 from skills import DocumentProcessor
 
@@ -28,6 +30,18 @@ UI_DIR = ROOT_DIR / "ui"
 UPLOAD_DIR = ROOT_DIR / "uploads"
 
 app = FastAPI(title="CPA-Agent UI")
+
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.environ.get("SECRET_KEY", "dev-insecure-key"),
+    session_cookie="cpa_session",
+    max_age=86400,
+    https_only=False,
+    same_site="lax",
+)
+
+user_manager = UserManager(ROOT_DIR / "memory" / "users.db")
+
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 agent = CPAAgent()
@@ -104,19 +118,150 @@ class RecurringUpdateRequest(BaseModel):
     next_date: str | None = None
 
 
+class LoginRequest(BaseModel):
+    username: str
+    password: str
+
+
+class CreateUserRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    role: str
+    business_keys: list[str] = []
+
+
+class UpdateUserRequest(BaseModel):
+    role: str | None = None
+    is_active: bool | None = None
+    business_keys: list[str] | None = None
+
+
 @app.get("/")
-def index() -> FileResponse:
+def index(request: Request) -> Response:
+    if user_manager.is_empty():
+        return RedirectResponse(url="/setup", status_code=302)
+    if not request.session.get("user_id"):
+        return RedirectResponse(url="/login", status_code=302)
     return FileResponse(UI_DIR / "index.html")
 
 
+@app.get("/login")
+def login_page(request: Request) -> Response:
+    if not user_manager.is_empty() and request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(UI_DIR / "login.html")
+
+
+@app.get("/setup")
+def setup_page(request: Request) -> Response:
+    if not user_manager.is_empty():
+        return RedirectResponse(url="/login", status_code=302)
+    return FileResponse(UI_DIR / "setup.html")
+
+
 @app.get("/api/status")
-def get_status() -> dict[str, Any]:
+def get_status(current_user: dict = Depends(get_current_user)) -> dict[str, Any]:
     with agent_lock:
         return agent.get_status()
 
 
+@app.post("/api/auth/login")
+def auth_login(payload: LoginRequest, request: Request) -> dict:
+    user = user_manager.verify_password(payload.username.strip(), payload.password)
+    if not user:
+        raise HTTPException(status_code=401, detail="Invalid username or password.")
+    request.session["user_id"] = user["id"]
+    return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
+
+
+@app.post("/api/auth/logout")
+def auth_logout(request: Request) -> dict:
+    request.session.clear()
+    return {"ok": True}
+
+
+@app.get("/api/auth/me")
+def auth_me(current_user: dict = Depends(get_current_user)) -> dict:
+    return {"user": current_user}
+
+
+@app.post("/api/setup/create-owner")
+def setup_create_owner(payload: CreateUserRequest, request: Request) -> dict:
+    """First-run only: create the initial owner account."""
+    if not user_manager.is_empty():
+        raise HTTPException(status_code=403, detail="Setup already complete.")
+    if payload.role != "owner":
+        raise HTTPException(status_code=400, detail="First account must be owner.")
+    user = user_manager.create_user(
+        payload.username.strip(),
+        payload.email.strip(),
+        payload.password,
+        "owner",
+    )
+    request.session["user_id"] = user["id"]
+    return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
+
+
+@app.get("/api/users")
+def list_users(current_user: dict = Depends(require_owner)) -> dict:
+    users = user_manager.list_users()
+    for u in users:
+        u["business_keys"] = user_manager.get_user_businesses(u["id"])
+    return {"users": users}
+
+
+@app.post("/api/users")
+def create_user_endpoint(
+    payload: CreateUserRequest,
+    current_user: dict = Depends(require_owner),
+) -> dict:
+    if payload.role not in ("owner", "bookkeeper", "employee"):
+        raise HTTPException(status_code=400, detail="Invalid role.")
+    user = user_manager.create_user(
+        payload.username.strip(),
+        payload.email.strip(),
+        payload.password,
+        payload.role,
+        payload.business_keys or [],
+    )
+    return {"ok": True, "user": user}
+
+
+@app.put("/api/users/{user_id}")
+def update_user_endpoint(
+    user_id: int,
+    payload: UpdateUserRequest,
+    current_user: dict = Depends(require_owner),
+) -> dict:
+    if payload.role and payload.role not in ("owner", "bookkeeper", "employee"):
+        raise HTTPException(status_code=400, detail="Invalid role.")
+    user = user_manager.update_user(
+        user_id,
+        role=payload.role,
+        is_active=payload.is_active,
+        business_keys=payload.business_keys,
+    )
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"ok": True, "user": user}
+
+
+@app.delete("/api/users/{user_id}")
+def deactivate_user_endpoint(
+    user_id: int,
+    current_user: dict = Depends(require_owner),
+) -> dict:
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot deactivate your own account.")
+    user = user_manager.update_user(user_id, is_active=False)
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found.")
+    return {"ok": True}
+
+
 @app.post("/api/message")
-def send_message(payload: MessageRequest) -> dict[str, Any]:
+def send_message(payload: MessageRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict[str, Any]:
     message = payload.message.strip()
     if not message:
         raise HTTPException(status_code=400, detail="Message cannot be empty.")
@@ -140,7 +285,7 @@ def send_message(payload: MessageRequest) -> dict[str, Any]:
 
 
 @app.post("/api/switch-business")
-def switch_business(payload: BusinessSwitchRequest) -> dict[str, Any]:
+def switch_business(payload: BusinessSwitchRequest, current_user: dict = Depends(get_current_user)) -> dict[str, Any]:
     business_name = payload.business_name.strip()
     if not business_name:
         raise HTTPException(status_code=400, detail="Business name cannot be empty.")
@@ -163,7 +308,7 @@ def switch_business(payload: BusinessSwitchRequest) -> dict[str, Any]:
 
 
 @app.post("/api/model-mode")
-def set_model_mode(payload: ModelModeRequest) -> dict[str, Any]:
+def set_model_mode(payload: ModelModeRequest, current_user: dict = Depends(require_owner)) -> dict[str, Any]:
     mode = payload.mode.strip().lower()
     if mode not in {"fast", "quality"}:
         raise HTTPException(status_code=400, detail="Mode must be 'fast' or 'quality'.")
@@ -182,7 +327,7 @@ def set_model_mode(payload: ModelModeRequest) -> dict[str, Any]:
 
 
 @app.post("/api/provider")
-def set_provider(payload: ProviderRequest) -> dict:
+def set_provider(payload: ProviderRequest, current_user: dict = Depends(require_owner)) -> dict:
     provider = payload.provider.strip().lower()
     valid_providers = {"ollama", "openai", "gemini", "openrouter"}
     if provider not in valid_providers:
@@ -194,7 +339,7 @@ def set_provider(payload: ProviderRequest) -> dict:
 
 
 @app.get("/api/report/pl")
-def report_pl(from_date: str = "", to_date: str = "") -> dict:
+def report_pl(from_date: str = "", to_date: str = "", current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         profile = agent.memory.get_current_business()
         if not profile.get("google_sheet_id"):
@@ -229,7 +374,7 @@ def report_pl(from_date: str = "", to_date: str = "") -> dict:
 
 
 @app.get("/api/export/csv")
-def export_csv(from_date: str = "", to_date: str = ""):
+def export_csv(from_date: str = "", to_date: str = "", current_user: dict = Depends(require_owner_or_bookkeeper)):
     from fastapi.responses import StreamingResponse
     with agent_lock:
         profile = agent.memory.get_current_business()
@@ -251,7 +396,7 @@ def export_csv(from_date: str = "", to_date: str = ""):
 
 
 @app.get("/api/ledger")
-def get_ledger(page: int = 1, page_size: int = 20, search: str = "", from_date: str = "", to_date: str = "") -> dict:
+def get_ledger(page: int = 1, page_size: int = 20, search: str = "", from_date: str = "", to_date: str = "", current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     page_size = min(max(page_size, 1), 100)
     page = max(page, 1)
     with agent_lock:
@@ -282,7 +427,7 @@ def get_ledger(page: int = 1, page_size: int = 20, search: str = "", from_date: 
 
 
 @app.post("/api/record-transaction")
-def record_transaction(payload: TransactionRequest) -> dict[str, Any]:
+def record_transaction(payload: TransactionRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict[str, Any]:
     with agent_lock:
         try:
             result = agent.record_structured_transaction(
@@ -319,6 +464,7 @@ def record_transaction(payload: TransactionRequest) -> dict[str, Any]:
 async def upload_document(
     note: str = Form(""),
     file: UploadFile = File(...),
+    current_user: dict = Depends(require_owner_or_bookkeeper),
 ) -> dict[str, Any]:
     if not file.filename:
         raise HTTPException(status_code=400, detail="A document file is required.")
@@ -407,7 +553,7 @@ async def upload_document(
 
 
 @app.post("/api/approve-document-draft")
-def approve_document_draft(payload: ApprovalRequest) -> dict[str, Any]:
+def approve_document_draft(payload: ApprovalRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict[str, Any]:
     _evict_stale_drafts()
     token = payload.token.strip()
     draft = pending_document_drafts.get(token)
@@ -446,7 +592,7 @@ def approve_document_draft(payload: ApprovalRequest) -> dict[str, Any]:
 
 
 @app.get("/api/category/suggest")
-def suggest_category(description: str = "") -> dict:
+def suggest_category(description: str = "", current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     if not description:
         raise HTTPException(status_code=400, detail="description is required")
     with agent_lock:
@@ -455,7 +601,7 @@ def suggest_category(description: str = "") -> dict:
 
 
 @app.post("/api/category-rule")
-def save_category_rule(payload: CategoryRuleRequest) -> dict:
+def save_category_rule(payload: CategoryRuleRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         rule = agent.categorization.save_rule(payload.description, payload.category)
         agent._save_category_rules()
@@ -463,13 +609,13 @@ def save_category_rule(payload: CategoryRuleRequest) -> dict:
 
 
 @app.get("/api/recurring")
-def get_recurring() -> dict:
+def get_recurring(current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         return {"schedules": agent.recurring.list_schedules()}
 
 
 @app.post("/api/recurring")
-def create_recurring(payload: RecurringCreateRequest) -> dict:
+def create_recurring(payload: RecurringCreateRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         schedule = agent.recurring.create_schedule(
             description=payload.description, amount=payload.amount,
@@ -482,7 +628,7 @@ def create_recurring(payload: RecurringCreateRequest) -> dict:
 
 
 @app.delete("/api/recurring/{schedule_id}")
-def cancel_recurring(schedule_id: str) -> dict:
+def cancel_recurring(schedule_id: str, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         found = agent.recurring.cancel_schedule(schedule_id)
         if not found:
@@ -492,7 +638,7 @@ def cancel_recurring(schedule_id: str) -> dict:
 
 
 @app.put("/api/recurring/{schedule_id}")
-def update_recurring(schedule_id: str, payload: RecurringUpdateRequest) -> dict:
+def update_recurring(schedule_id: str, payload: RecurringUpdateRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         updates = {k: v for k, v in payload.model_dump().items() if v is not None}
         result = agent.recurring.update_schedule(schedule_id, updates)
@@ -513,7 +659,7 @@ class CashFlowRequest(BaseModel):
 
 
 @app.get("/api/balance-sheet")
-def get_balance_sheet(from_date: Optional[str] = None, to_date: Optional[str] = None) -> dict:
+def get_balance_sheet(from_date: Optional[str] = None, to_date: Optional[str] = None, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         profile = agent.memory.get_current_business()
         if not profile.get("google_sheet_id"):
@@ -550,7 +696,7 @@ def get_balance_sheet(from_date: Optional[str] = None, to_date: Optional[str] = 
 
 
 @app.get("/api/cash-flow")
-def get_cash_flow(from_date: Optional[str] = None, to_date: Optional[str] = None) -> dict:
+def get_cash_flow(from_date: Optional[str] = None, to_date: Optional[str] = None, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         profile = agent.memory.get_current_business()
         if not profile.get("google_sheet_id"):
@@ -590,7 +736,7 @@ class BudgetRequest(BaseModel):
 
 
 @app.get("/api/budget")
-def get_budget(month: Optional[str] = None) -> dict:
+def get_budget(month: Optional[str] = None, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         if month is None:
             month = datetime.now().strftime("%Y-%m")
@@ -618,7 +764,7 @@ def get_budget(month: Optional[str] = None) -> dict:
 
 
 @app.post("/api/budget")
-def set_budget(payload: BudgetRequest) -> dict:
+def set_budget(payload: BudgetRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         budget_data = agent.memory.load_budgets()
         new_budget = agent.budget_engine.set_budget(
@@ -631,7 +777,7 @@ def set_budget(payload: BudgetRequest) -> dict:
 
 
 @app.delete("/api/budget/{budget_id}")
-def delete_budget(budget_id: str) -> dict:
+def delete_budget(budget_id: str, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         budget_data = agent.memory.load_budgets()
         original_len = len(budget_data["budgets"])
@@ -647,7 +793,7 @@ def delete_budget(budget_id: str) -> dict:
 
 # AR/AP Endpoints
 @app.post("/api/ar-ap")
-def create_ar_ap_entry(payload: dict) -> dict:
+def create_ar_ap_entry(payload: dict, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         try:
             entry_type = payload.get("type", "receivable").lower()
@@ -686,7 +832,7 @@ def create_ar_ap_entry(payload: dict) -> dict:
 
 
 @app.put("/api/ar-ap/{entry_id}/mark-paid")
-def mark_ar_ap_paid(entry_id: str, payload: dict) -> dict:
+def mark_ar_ap_paid(entry_id: str, payload: dict, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         try:
             from datetime import datetime as _dt
@@ -721,7 +867,7 @@ def mark_ar_ap_paid(entry_id: str, payload: dict) -> dict:
 
 
 @app.get("/api/ar-ap")
-def get_ar_ap() -> dict:
+def get_ar_ap(current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         try:
             data = agent.ar_ap_engine.get_ar_ap()
@@ -731,7 +877,7 @@ def get_ar_ap() -> dict:
 
 
 @app.get("/api/ar-ap/overdue")
-def get_overdue_ar_ap() -> dict:
+def get_overdue_ar_ap(current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         try:
             data = agent.ar_ap_engine.get_overdue_items()
@@ -741,7 +887,7 @@ def get_overdue_ar_ap() -> dict:
 
 
 @app.get("/api/ar-ap/upcoming")
-def get_upcoming_ar_ap(days_ahead: int = 7) -> dict:
+def get_upcoming_ar_ap(days_ahead: int = 7, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         try:
             data = agent.ar_ap_engine.get_upcoming_due(days_ahead=days_ahead)
@@ -752,7 +898,7 @@ def get_upcoming_ar_ap(days_ahead: int = 7) -> dict:
 
 # Tax Endpoints
 @app.get("/api/tax")
-def get_tax_info(year: int = None) -> dict:
+def get_tax_info(year: int = None, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         try:
             if year is None:
@@ -783,7 +929,7 @@ def get_tax_info(year: int = None) -> dict:
 
 # Bank Reconciliation Endpoints
 @app.post("/api/reconcile/upload")
-def upload_bank_statement(file: UploadFile = File(...)) -> dict:
+def upload_bank_statement(file: UploadFile = File(...), current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         # Save uploaded file temporarily
         temp_path = Path(f"/tmp/{file.filename}")
@@ -834,7 +980,7 @@ class ReconcileResolveRequest(BaseModel):
 
 
 @app.post("/api/reconcile/resolve/{transaction_id}")
-def resolve_transaction(transaction_id: str, payload: ReconcileResolveRequest) -> dict:
+def resolve_transaction(transaction_id: str, payload: ReconcileResolveRequest, current_user: dict = Depends(require_owner_or_bookkeeper)) -> dict:
     with agent_lock:
         action = payload.action
         if action not in ["add_to_ledger", "mark_resolved"]:
