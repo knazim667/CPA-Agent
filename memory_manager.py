@@ -5,6 +5,20 @@ import time
 from pathlib import Path
 from typing import Any
 
+PROFILE_DEFAULTS: dict = {
+    "legal_structure": "",        # single_member_llc | multi_member_llc | s_corp | partnership | sole_proprietor
+    "industry": "",               # e_commerce | import_export | professional_services | retail | construction | healthcare | content_creator | manufacturing | other
+    "business_model": "",         # product_based | service_based | mixed
+    "fiscal_year_start": "01-01",
+    "accounting_basis": "cash",   # cash | accrual
+    "inventory_method": "none",   # fifo | lifo | wac | none
+    "operating_states": [],
+    "address": {"street": "", "city": "", "state": "", "zip": "", "country": "US"},
+    "contact": {"phone": "", "email": ""},
+    "owners": [],
+    "onboarding_complete": False,
+}
+
 
 class MemoryManager:
     def __init__(self, memory_root: Path) -> None:
@@ -112,6 +126,7 @@ class MemoryManager:
 
         db_name = f"{business_key}.db"
         profile = {
+            **PROFILE_DEFAULTS,
             "business_name": cleaned_name,
             "google_sheet_id": "replace-with-sheet-id",
             "google_doc_id": "replace-with-doc-id",
@@ -312,3 +327,18 @@ class MemoryManager:
         path = self._m1_category_map_path()
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+
+    def migrate_business_profiles(self) -> None:
+        """Add missing onboarding fields to existing config.json files."""
+        for key in self.list_business_keys():
+            try:
+                profile = self.load_business_profile(key)
+                changed = False
+                for field, default in PROFILE_DEFAULTS.items():
+                    if field not in profile:
+                        profile[field] = default
+                        changed = True
+                if changed:
+                    self.save_business_profile(key, profile)
+            except Exception:  # noqa: BLE001
+                pass

@@ -52,6 +52,7 @@ user_manager = UserManager(ROOT_DIR / "memory" / "users.db")
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 
 agent = CPAAgent()
+agent.memory.migrate_business_profiles()
 document_processor = DocumentProcessor(UPLOAD_DIR)
 agent_lock = Lock()
 pending_document_drafts: dict[str, dict[str, Any]] = {}
