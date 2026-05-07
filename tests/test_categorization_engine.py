@@ -54,3 +54,83 @@ def test_backfill_creates_rules_for_repeated_pairs():
     assert engine.suggest_category("Starbucks latte") is not None
     assert engine.suggest_category("AWS bill") is not None
     assert engine.suggest_category("OneTime payment") is None
+
+
+# ── split_transaction ──────────────────────────────────────────────────────
+
+
+def _two_splits() -> tuple[float, list[dict]]:
+    return 200.0, [
+        {"amount": 100.0, "category": "Office Supplies", "description": "Amazon - office supplies"},
+        {"amount": 100.0, "category": "Inventory", "description": "Amazon - inventory"},
+    ]
+
+
+def _three_splits() -> tuple[float, list[dict]]:
+    return 300.0, [
+        {"amount": 150.0, "category": "Office Supplies", "description": "Amazon - office supplies"},
+        {"amount": 100.0, "category": "Equipment", "description": "Amazon - equipment"},
+        {"amount":  50.0, "category": "Meals & Entertainment", "description": "Amazon - meals"},
+    ]
+
+
+def test_split_transaction_returns_correct_row_count():
+    engine = CategorizationEngine()
+    total, splits = _two_splits()
+    rows = engine.split_transaction(total, splits, date="2026-05-07")
+    assert len(rows) == 2
+
+
+def test_split_transaction_row_structure():
+    engine = CategorizationEngine()
+    total, splits = _two_splits()
+    rows = engine.split_transaction(total, splits, date="2026-05-07")
+    row = rows[0]
+    assert len(row) == 7
+    assert row[0] == "2026-05-07"                   # date
+    assert row[1] == "Amazon - office supplies"     # description
+    assert row[2] == "Office Supplies"              # category
+    assert row[3] == 100.0                          # amount
+    assert row[4] == "Expense"                      # entry_type default
+    assert row[5] == ""                             # reference empty
+    assert row[6] == "split 1/2"                   # notes
+
+
+def test_split_transaction_split_note_format():
+    engine = CategorizationEngine()
+    total, splits = _three_splits()
+    rows = engine.split_transaction(total, splits, date="2026-05-07")
+    assert rows[0][6] == "split 1/3"
+    assert rows[1][6] == "split 2/3"
+    assert rows[2][6] == "split 3/3"
+
+
+def test_split_transaction_raises_on_empty_splits():
+    engine = CategorizationEngine()
+    with pytest.raises(ValueError, match="at least one split"):
+        engine.split_transaction(100.0, [])
+
+
+def test_split_transaction_raises_on_amount_mismatch():
+    engine = CategorizationEngine()
+    splits = [
+        {"amount": 60.0, "category": "Office Supplies", "description": "Amazon - supplies"},
+        {"amount": 60.0, "category": "Inventory",       "description": "Amazon - inventory"},
+    ]
+    with pytest.raises(ValueError, match="do not match total"):
+        engine.split_transaction(100.0, splits)
+
+
+def test_split_transaction_raises_on_missing_key():
+    engine = CategorizationEngine()
+    splits = [{"amount": 100.0, "category": "Office Supplies"}]  # missing description
+    with pytest.raises(ValueError, match="description"):
+        engine.split_transaction(100.0, splits)
+
+
+def test_split_transaction_single_split():
+    engine = CategorizationEngine()
+    splits = [{"amount": 50.0, "category": "Meals & Entertainment", "description": "Starbucks - coffee"}]
+    rows = engine.split_transaction(50.0, splits, date="2026-05-07")
+    assert len(rows) == 1
+    assert rows[0][6] == "split 1/1"

@@ -84,3 +84,40 @@ class CategorizationEngine:
                     })
                     created += 1
         return created
+
+    def split_transaction(
+        self,
+        total_amount: float,
+        splits: list[dict],
+        *,
+        date: str = "",
+        parent_description: str = "",
+        entry_type: str = "Expense",
+    ) -> list[list[Any]]:
+        if not splits:
+            raise ValueError("split_transaction requires at least one split.")
+        for i, s in enumerate(splits):
+            for key in ("amount", "category", "description"):
+                if key not in s:
+                    raise ValueError(
+                        f"Split {i} is missing required key '{key}'."
+                    )
+        total_split = round(sum(s["amount"] for s in splits), 2)
+        if abs(total_split - round(total_amount, 2)) > 0.01:
+            raise ValueError(
+                f"Split amounts (${total_split:.2f}) do not match total "
+                f"(${round(total_amount, 2):.2f})."
+            )
+        n = len(splits)
+        return [
+            [
+                date,
+                s["description"],
+                s["category"],
+                round(s["amount"], 2),
+                entry_type,
+                "",
+                f"split {i}/{n}",
+            ]
+            for i, s in enumerate(splits, start=1)
+        ]
