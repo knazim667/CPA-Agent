@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import dataclasses
 import json
 import sys
 import os
@@ -10,6 +11,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..'))
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), '..', 'skills'))
 
 from memory_manager import MemoryManager
+from m1_reconciler import (
+    M1Draft,
+    M1Reconciler,
+    VALID_ADJUSTMENT_TYPES,
+    _DEFAULT_CATEGORY_MAP,
+)
 
 
 @pytest.fixture
@@ -58,14 +65,6 @@ def test_memory_manager_save_and_load_m1_category_map_roundtrip(mm_with_business
     assert loaded == data
 
 
-from m1_reconciler import (
-    M1Draft,
-    M1Reconciler,
-    VALID_ADJUSTMENT_TYPES,
-    _DEFAULT_CATEGORY_MAP,
-)
-
-
 class MockMemoryManager:
     """In-memory stand-in for MemoryManager used across all M-1 tests."""
     def __init__(self):
@@ -91,6 +90,7 @@ def test_valid_adjustment_types_contains_expected():
     assert "officer_life_insurance" in VALID_ADJUSTMENT_TYPES
     assert "federal_income_tax" in VALID_ADJUSTMENT_TYPES
     assert "other_nondeductible" in VALID_ADJUSTMENT_TYPES
+    assert len(VALID_ADJUSTMENT_TYPES) == 5
 
 
 def test_default_category_map_meals():
@@ -116,10 +116,19 @@ def test_m1draft_fields():
         formatted="test",
     )
     assert draft.year == 2026
+    assert draft.entity_type == "s_corp"
+    assert draft.line1_book_income == 45000.0
+    assert draft.line2_federal_tax == 0.0
+    assert draft.line5a_meals_disallowed == 600.0
+    assert draft.line5b_depreciation_diff == -4000.0
+    assert draft.line7_other_nondeductible == 2900.0
     assert draft.line8_taxable_income == 44500.0
+    assert draft.formatted == "test"
+    assert len(dataclasses.fields(M1Draft)) == 9
 
 
 def test_m1_reconciler_initialises_from_empty_memory():
     mm = MockMemoryManager()
     rec = M1Reconciler(mm)
-    assert rec is not None
+    assert rec._state == {}
+    assert rec._custom_map == {}
