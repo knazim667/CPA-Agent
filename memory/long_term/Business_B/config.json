@@ -5,5 +5,25 @@
   "local_memory_db": "memory/long_term/Business_B/business_b.db",
   "federal_ein": "xx-xxxxxxx",
   "state": "CA",
-  "default_books_currency": "USD"
+  "default_books_currency": "USD",
+  "legal_structure": "",
+  "industry": "",
+  "business_model": "",
+  "fiscal_year_start": "01-01",
+  "accounting_basis": "cash",
+  "inventory_method": "none",
+  "operating_states": [],
+  "address": {
+    "street": "",
+    "city": "",
+    "state": "",
+    "zip": "",
+    "country": "US"
+  },
+  "contact": {
+    "phone": "",
+    "email": ""
+  },
+  "owners": [],
+  "onboarding_complete": false
 }

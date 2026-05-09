@@ -13,37 +13,104 @@
   };
 }());
 
-/* ============================================================
-   CPA-Agent — ui/app.js
-   Tab router, toast system, and all UI capabilities (Task 14)
-   ============================================================ */
+/* 404 interceptor — fallback to main page */
+(function () {
+  var _origFetch = window.fetch;
+  window.fetch = function () {
+    var _orig = _origFetch.apply(this, arguments);
+    return _orig.then(function (r) {
+      if (r.status === 404 && r.url.includes('/api/') && r.url.startsWith('/api/')) {
+        var lastSlash = r.url.lastIndexOf('/');
+        var path = r.url.substring(0, lastSlash);
+        window.location.href = path + '/';
+      }
+      return r;
+    }).catch(function () {
+      return r;
+    });
+  };
+}());
 
+/* CPA-Agent — Main entry point */
 'use strict';
 
 /* ----------------------------------------------------------
-   1. Utility helpers
+   1. Import modules
    ---------------------------------------------------------- */
 
-/** Sanitize a value for safe HTML insertion */
-function esc(v) {
-  const s = (v === null || v === undefined) ? '' : String(v);
-  return s
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;')
-    .replace(/"/g, '&quot;');
-}
+// Load UI modules
+(function () {
+  if (typeof window === 'undefined') { return; }
 
-var USD_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+  // Import state management
+  if (typeof getState === 'undefined') {
+    var stateModule = document.createElement('script');
+    stateModule.src = '/js/ui/state.js';
+    document.head.appendChild(stateModule);
+  }
 
-/** Format a number as USD currency */
-function fmt(v) { return USD_FMT.format(Number(v) || 0); }
+  // Import caching layer
+  if (typeof fetchCached === 'undefined') {
+    var cacheModule = document.createElement('script');
+    cacheModule.src = '/js/ui/cached_fetch.js';
+    document.head.appendChild(cacheModule);
+  }
 
-/** Format a number as signed USD (e.g. +$500.00 / -$500.00) */
-function fmtSigned(v) {
-  var n = Number(v || 0);
-  return (n >= 0 ? '+' : '-') + USD_FMT.format(Math.abs(n));
-}
+  // Import debounce utilities
+  if (typeof debounceLedgerSearch === 'undefined') {
+    var debounceModule = document.createElement('script');
+    debounceModule.src = '/js/ui/debounce.js';
+    document.head.appendChild(debounceModule);
+  }
+
+  // Import validators
+  if (typeof validateTransactionForm === 'undefined') {
+    var validatorsModule = document.createElement('script');
+    validatorsModule.src = '/js/ui/validators.js';
+    document.head.appendChild(validatorsModule);
+  }
+
+  // Import presentation renderer
+  if (typeof renderPresentation === 'undefined') {
+    var presentationModule = document.createElement('script');
+    presentationModule.src = '/js/ui/presentation.js';
+    document.head.appendChild(presentationModule);
+  }
+
+  // Import markdown parser
+  if (typeof appendMessage === 'undefined') {
+    var markdownModule = document.createElement('script');
+    markdownModule.src = '/js/ui/markdown.js';
+    document.head.appendChild(markdownModule);
+  }
+
+  // Import voice functionality
+  if (typeof speakReply === 'undefined') {
+    var voiceModule = document.createElement('script');
+    voiceModule.src = '/js/ui/voice.js';
+    document.head.appendChild(voiceModule);
+  }
+
+  // Import router
+  if (typeof switchTab === 'undefined') {
+    var routerModule = document.createElement('script');
+    routerModule.src = '/js/ui/router.js';
+    document.head.appendChild(routerModule);
+  }
+
+  // Import export utilities
+  if (typeof toCSV === 'undefined') {
+    var exportModule = document.createElement('script');
+    exportModule.src = '/js/ui/export.js';
+    document.head.appendChild(exportModule);
+  }
+
+  // Load chat module after other modules are loaded
+  var chatModule = document.createElement('script');
+  chatModule.src = '/js/ui/chat.js';
+  chatModule.onload = initApp;
+  document.head.appendChild(chatModule);
+})();
 
 /* ----------------------------------------------------------
    2. Toast system
@@ -56,7 +123,7 @@ function showToast(message, type) {
 
   var toast = document.createElement('div');
   toast.className = 'toast ' + type;
-  toast.textContent = esc(message);
+  toast.textContent = message;
   container.appendChild(toast);
 
   setTimeout(function () {
@@ -64,625 +131,18 @@ function showToast(message, type) {
     setTimeout(function () {
       if (toast.parentNode) { toast.parentNode.removeChild(toast); }
     }, 300);
-  }, 3700);
+  }, 3500);
 }
 
 /* ----------------------------------------------------------
-   3. State
+   3. Init helpers
    ---------------------------------------------------------- */
 
-var currentLedgerPage = 1;
-var speakReplies = false;
-var recognition = null;
-var isListening = false;
-var latestPresentation = null;
-var seenAlertDeadlines = new Set();
-var MAX_SEEN_ALERTS = 50;
-var currentUserRole = null;
-var wizardStep = 1;
-var wizardTotalSteps = 5;
-var wizardBizKey = null;
-var onboardingWizardShown = false;
-
-/* ----------------------------------------------------------
-   4. DOM element references (populated after DOMContentLoaded)
-   ---------------------------------------------------------- */
-
-var chatLog, chatForm, messageInput, businessSelect;
-var providerSelect, modelModeSelect;
-var bootWarning, modelBadge, learnedCount, sheetLink, docLink;
-var metricTransactions, metricIncome, metricExpenses, metricNet, metricFlagged;
-var recentTransactionsEl, recentAuditsEl;
-var ledgerBody, ledgerPageInfo, ledgerPrev, ledgerNext;
-var ledgerSearch, ledgerFrom, ledgerTo;
-var txDate, txType, txDescription, txCategory, txAmount, txReference, txNotes;
-var reportFrom, reportTo;
-var incomeBody, expenseBody, incomeTotalCell, expenseTotalCell, netProfitValue, netProfitRow;
-var reportOutput;
-var balanceSheetOutput, cashFlowOutput;
-var budgetMonthInput, budgetGenerateBtn, budgetOutput, budgetBody, budgetAlerts;
-var arApBody, reconcileBody, taxOutput;
-var documentDrafts;
-var voiceButton, voiceStatus, speakToggle;
-
-/* ----------------------------------------------------------
-   5. Recurring transactions (stub — content in Task 8)
-   ---------------------------------------------------------- */
-
-function fetchRecurring() {
-  fetch('/api/recurring')
-    .then(function (r) { return r.json(); })
-    .then(function (data) { renderRecurring(data.schedules || []); })
-    .catch(function (err) { console.error('fetchRecurring error:', err); });
+function initToast() {
+  // Toast functionality handled by chat.js now
 }
 
-function renderRecurring(schedules) {
-  var tbody = document.getElementById('recurring-body');
-  if (!tbody) { return; }
-  tbody.textContent = '';
-  if (!schedules.length) {
-    var tr = document.createElement('tr');
-    var td = document.createElement('td');
-    td.colSpan = 6;
-    td.style.color = '#6b7280';
-    td.style.padding = '1rem';
-    td.textContent = 'No recurring schedules. Use Chat to create one.';
-    tr.appendChild(td);
-    tbody.appendChild(tr);
-    return;
-  }
-  schedules.forEach(function (s) {
-    var tr = document.createElement('tr');
-    [
-      s.description,
-      (s.entry_type === 'Expense' ? '−' : '+') + '$' + Number(s.amount).toFixed(2),
-      s.category,
-      s.frequency,
-      s.next_date,
-    ].forEach(function (val) {
-      var td = document.createElement('td');
-      td.textContent = val;
-      tr.appendChild(td);
-    });
-    var actionsTd = document.createElement('td');
-    var cancelBtn = document.createElement('button');
-    cancelBtn.textContent = '✕';
-    cancelBtn.style.cssText = 'background:none;border:none;color:#ef4444;cursor:pointer;font-size:1rem';
-    cancelBtn.addEventListener('click', function () {
-      if (!confirm('Cancel recurring: ' + s.description + '?')) { return; }
-      fetch('/api/recurring/' + s.id, { method: 'DELETE' })
-        .then(function () { fetchRecurring(); })
-        .catch(function (err) { showToast(String(err), 'error'); });
-    });
-    actionsTd.appendChild(cancelBtn);
-    tr.appendChild(actionsTd);
-    tbody.appendChild(tr);
-  });
-}
-
-/* ----------------------------------------------------------
-   Balance Sheet
-   ---------------------------------------------------------- */
-
-function fetchBalanceSheet() {
-  var from = (document.getElementById('bs-from') || {}).value || '';
-  var to   = (document.getElementById('bs-to')   || {}).value || '';
-  var qs   = (from || to) ? '?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to) : '';
-  fetch('/api/balance-sheet' + qs)
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      function setText(id, v) { var el = document.getElementById(id); if (el) { el.textContent = v; } }
-      setText('bs-cash',                fmt(data.assets  && data.assets.cash));
-      setText('bs-accounts-receivable', fmt(data.assets  && data.assets.accounts_receivable));
-      setText('bs-assets',              fmt(data.assets  && data.assets.total));
-      setText('bs-accounts-payable',    fmt(data.liabilities && data.liabilities.accounts_payable));
-      setText('bs-liabilities',         fmt(data.liabilities && data.liabilities.total));
-      setText('bs-retained-earnings',   fmt(data.equity  && data.equity.retained_earnings));
-      setText('bs-equity',              fmt(data.equity  && data.equity.total));
-      setText('bs-balance-check',       data.balanced ? '✓ Balanced' : '✗ Not balanced');
-      setText('bs-note', data.approximate ? 'AR/AP data not yet available — Balance Sheet is approximate.' : '');
-      var out = document.getElementById('balance-sheet-output');
-      if (out) { out.classList.remove('hidden'); }
-    })
-    .catch(function (err) { showToast('Balance Sheet error: ' + err, 'error'); });
-}
-
-/* ----------------------------------------------------------
-   Cash Flow
-   ---------------------------------------------------------- */
-
-function fetchCashFlow() {
-  var from = (document.getElementById('cf-from') || {}).value || '';
-  var to   = (document.getElementById('cf-to')   || {}).value || '';
-  var qs   = (from || to) ? '?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to) : '';
-  fetch('/api/cash-flow' + qs)
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      function setText(id, v) { var el = document.getElementById(id); if (el) { el.textContent = v; } }
-      setText('cf-operating', fmtSigned(data.operating));
-      setText('cf-investing',  fmtSigned(data.investing));
-      setText('cf-financing',  fmtSigned(data.financing));
-      setText('cf-net',        fmtSigned(data.net_change));
-      var out = document.getElementById('cash-flow-output');
-      if (out) { out.classList.remove('hidden'); }
-    })
-    .catch(function (err) { showToast('Cash Flow error: ' + err, 'error'); });
-}
-
-/* ----------------------------------------------------------
-   Budget vs Actual
-   ---------------------------------------------------------- */
-
-function fetchBudget() {
-  var monthIn = document.getElementById('budget-month');
-  var month = (monthIn && monthIn.value) ? monthIn.value : new Date().toISOString().slice(0, 7);
-  fetch('/api/budget?month=' + encodeURIComponent(month))
-    .then(function (r) { return r.json(); })
-    .then(function (data) { renderBudget(data); })
-    .catch(function (err) { showToast('Budget error: ' + err, 'error'); });
-}
-
-function renderBudget(data) {
-  var tbody    = document.getElementById('budget-body');
-  var alertsEl = document.getElementById('budget-alerts');
-  var output   = document.getElementById('budget-output');
-  if (!tbody) { return; }
-
-  // Render alert banners
-  if (alertsEl) {
-    alertsEl.textContent = '';
-    (data.alerts || []).forEach(function (a) {
-      var div = document.createElement('div');
-      var isDanger = a.level === 'danger';
-      div.className = isDanger ? 'budget-alert-danger' : 'budget-alert-warning';
-      var prefix = document.createTextNode((isDanger ? 'Over budget: ' : 'Near limit: ') +
-        a.category + ' — ' + a.pct.toFixed(0) + '% used');
-      div.appendChild(prefix);
-      alertsEl.appendChild(div);
-    });
-  }
-
-  tbody.textContent = '';
-  var budgets = data.budgets || [];
-
-  if (!budgets.length) {
-    var emptyTr = document.createElement('tr');
-    var emptyTd = document.createElement('td');
-    emptyTd.colSpan = 6;
-    emptyTd.style.cssText = 'color:#6b7280;padding:1rem';
-    emptyTd.textContent = 'No budgets set. Use the form above or Chat to add one.';
-    emptyTr.appendChild(emptyTd);
-    tbody.appendChild(emptyTr);
-  } else {
-    budgets.forEach(function (b) {
-      var pct      = Math.min(b.pct, 100);
-      var tr = document.createElement('tr');
-
-      [b.category, '$' + b.budget.toFixed(2), '$' + b.actual.toFixed(2), '$' + b.remaining.toFixed(2)].forEach(function (val) {
-        var td = document.createElement('td');
-        td.textContent = val;
-        tr.appendChild(td);
-      });
-
-      // Progress bar (DOM only)
-      var barTd = document.createElement('td');
-      var track = document.createElement('div');
-      track.className = 'budget-bar-track';
-      var fill = document.createElement('div');
-      fill.className = 'budget-bar-fill' + (b.pct >= 100 ? ' over' : b.pct >= 80 ? ' near' : '');
-      fill.style.width = pct + '%';
-      track.appendChild(fill);
-      barTd.appendChild(track);
-      var pctLabel = document.createElement('span');
-      pctLabel.className = 'muted';
-      pctLabel.textContent = b.pct.toFixed(0) + '%';
-      barTd.appendChild(pctLabel);
-      tr.appendChild(barTd);
-
-      // Delete button
-      var delTd = document.createElement('td');
-      var delBtn = document.createElement('button');
-      delBtn.textContent = '✕';
-      delBtn.style.cssText = 'background:none;border:none;color:#ef4444;cursor:pointer;font-size:0.9rem';
-      (function (budgetId, catName) {
-        delBtn.addEventListener('click', function () {
-          if (!confirm('Remove budget for ' + catName + '?')) { return; }
-          fetch('/api/budget/' + budgetId, { method: 'DELETE' })
-            .then(function () { fetchBudget(); showToast('Budget removed', 'success'); })
-            .catch(function (err) { showToast(String(err), 'error'); });
-        });
-      })(b.id, b.category);
-      delTd.appendChild(delBtn);
-      tr.appendChild(delTd);
-      tbody.appendChild(tr);
-    });
-  }
-
-  if (output) { output.classList.remove('hidden'); }
-}
-
-function initBudget() {
-  var monthIn = document.getElementById('budget-month');
-  if (monthIn && !monthIn.value) { monthIn.value = new Date().toISOString().slice(0, 7); }
-
-  var genBtn = document.getElementById('budget-generate-btn');
-  if (genBtn) { genBtn.addEventListener('click', function () { fetchBudget(); }); }
-
-  var addForm = document.getElementById('budget-add-form');
-  if (addForm) {
-    addForm.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var catEl = document.getElementById('budget-cat-input');
-      var amtEl = document.getElementById('budget-amt-input');
-      var cat = catEl ? catEl.value.trim() : '';
-      var amt = amtEl ? parseFloat(amtEl.value) : 0;
-      if (!cat || !amt) { showToast('Category and amount are required', 'error'); return; }
-      fetch('/api/budget', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ category: cat, amount: amt, period: 'monthly' })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function () {
-          showToast('Budget set for ' + cat, 'success');
-          addForm.reset();
-          if (monthIn) { monthIn.value = new Date().toISOString().slice(0, 7); }
-          fetchBudget();
-        })
-        .catch(function (err) { showToast(String(err), 'error'); });
-    });
-  }
-
-  // Wire generate buttons for balance sheet and cash flow
-  var bsBtn = document.getElementById('bs-generate-btn');
-  if (bsBtn) { bsBtn.addEventListener('click', function () { fetchBalanceSheet(); }); }
-  var cfBtn = document.getElementById('cf-generate-btn');
-  if (cfBtn) { cfBtn.addEventListener('click', function () { fetchCashFlow(); }); }
-}
-
-/* ----------------------------------------------------------
-   AR/AP
-   ---------------------------------------------------------- */
-
-function fetchArAp() {
-  fetch('/api/ar-ap')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      if (!data.ok) {
-        showToast('AR/AP error: ' + (data.detail || 'Unknown error'), 'error');
-        return;
-      }
-      renderArAp(data.data);
-    })
-    .catch(function (err) { showToast('AR/AP error: ' + err, 'error'); });
-}
-
-function renderMarkPaidButton(id, type) {
-  var btn = document.createElement('button');
-  btn.textContent = 'Mark Paid';
-  btn.style.cssText = 'background:#059669;color:#fff;border:none;border-radius:6px;cursor:pointer;font-size:0.8rem;padding:0.25rem 0.75rem;';
-  btn.addEventListener('click', function () {
-    fetch('/api/ar-ap/' + id + '/mark-paid', {
-      method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ type: type, paid_date: new Date().toISOString().slice(0, 10) })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (d) {
-        if (d.ok) { showToast('Entry marked as paid', 'success'); fetchArAp(); }
-        else { showToast('Failed to mark as paid: ' + (d.detail || 'Unknown error'), 'error'); }
-      })
-      .catch(function (err) { showToast('Error marking as paid: ' + err, 'error'); });
-  });
-  return btn;
-}
-
-function renderArAp(data) {
-  var receivablesBody = document.getElementById('ar-ap-receivables-body');
-  var payablesBody = document.getElementById('ar-ap-payables-body');
-  var receivablesCountEl = document.getElementById('ar-ap-receivables-count');
-  var payablesCountEl = document.getElementById('ar-ap-payables-count');
-  var overdueCountEl = document.getElementById('ar-ap-overdue-count');
-  var arApOutput = document.getElementById('ar-ap-output');
-
-  if (!receivablesBody || !payablesBody) { return; }
-
-  receivablesBody.textContent = '';
-  payablesBody.textContent = '';
-
-  var receivables = data.receivables || [];
-  var payables = data.payables || [];
-  var overdueReceivables = receivables.filter(r => r.days_outstanding > 0 && r.status === 'open');
-  var overduePayables = payables.filter(p => p.days_outstanding > 0 && p.status === 'open');
-  var totalOverdue = overdueReceivables.length + overduePayables.length;
-
-  if (receivablesCountEl) receivablesCountEl.textContent = receivables.length;
-  if (payablesCountEl) payablesCountEl.textContent = payables.length;
-  if (overdueCountEl) overdueCountEl.textContent = totalOverdue;
-  if (arApOutput) arApOutput.classList.remove('hidden');
-
-  // Dashboard summary cards
-  var openReceivables = receivables.filter(function (r) { return r.status === 'open'; });
-  var openArTotal = openReceivables.reduce(function (sum, r) { return sum + Number(r.amount || 0); }, 0);
-  var overdueArCount = overdueReceivables.length;
-  var upcomingApCount = payables.filter(function (p) { return p.days_outstanding >= -7 && p.days_outstanding <= 0 && p.status === 'open'; }).length;
-  var dashArOpenTotal = document.getElementById('dash-ar-open-total');
-  var dashArOverdue = document.getElementById('dash-ar-overdue');
-  var dashApUpcoming = document.getElementById('dash-ap-upcoming');
-  if (dashArOpenTotal) { dashArOpenTotal.textContent = '$' + openArTotal.toFixed(2); dashArOpenTotal.classList.remove('skeleton'); }
-  if (dashArOverdue) { dashArOverdue.textContent = overdueArCount; dashArOverdue.classList.remove('skeleton'); }
-  if (dashApUpcoming) { dashApUpcoming.textContent = upcomingApCount; dashApUpcoming.classList.remove('skeleton'); }
-
-  // Render receivables
-  if (!receivables.length) {
-    var tr = document.createElement('tr');
-    var td = document.createElement('td');
-    td.colSpan = 6;
-    td.style.color = '#6b7280';
-    td.style.padding = '1rem';
-    td.textContent = 'No receivables';
-    tr.appendChild(td);
-    receivablesBody.appendChild(tr);
-  } else {
-    receivables.forEach(function (r) {
-      var tr = document.createElement('tr');
-      [
-        r.client_vendor || '',
-        '$' + Number(r.amount || 0).toFixed(2),
-        r.due_date || '',
-        r.status || '',
-        r.days_outstanding !== undefined ? r.days_outstanding : ''
-      ].forEach(function (val) {
-        var td = document.createElement('td');
-        td.textContent = val;
-        tr.appendChild(td);
-      });
-
-      var actionsTd = document.createElement('td');
-      if (r.status === 'open') { actionsTd.appendChild(renderMarkPaidButton(r.id, 'receivable')); }
-      tr.appendChild(actionsTd);
-      receivablesBody.appendChild(tr);
-    });
-  }
-
-  // Render payables
-  if (!payables.length) {
-    var tr = document.createElement('tr');
-    var td = document.createElement('td');
-    td.colSpan = 6;
-    td.style.color = '#6b7280';
-    td.style.padding = '1rem';
-    td.textContent = 'No payables';
-    tr.appendChild(td);
-    payablesBody.appendChild(tr);
-  } else {
-    payables.forEach(function (p) {
-      var tr = document.createElement('tr');
-      [
-        p.client_vendor || '',
-        '$' + Number(p.amount || 0).toFixed(2),
-        p.due_date || '',
-        p.status || '',
-        p.days_outstanding !== undefined ? p.days_outstanding : ''
-      ].forEach(function (val) {
-        var td = document.createElement('td');
-        td.textContent = val;
-        tr.appendChild(td);
-      });
-
-      var actionsTd = document.createElement('td');
-      if (p.status === 'open') { actionsTd.appendChild(renderMarkPaidButton(p.id, 'payable')); }
-      tr.appendChild(actionsTd);
-      payablesBody.appendChild(tr);
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   Tax
-   ---------------------------------------------------------- */
-
-function fetchTax() {
-  var yearInput = document.getElementById('tax-year');
-  var year = yearInput && yearInput.value ? parseInt(yearInput.value) : new Date().getFullYear();
-
-  fetch('/api/tax?year=' + year)
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      if (!data.ok) {
-        showToast('Tax error: ' + (data.detail || 'Unknown error'), 'error');
-        return;
-      }
-      renderTax(data);
-    })
-    .catch(function (err) { showToast('Tax error: ' + err, 'error'); });
-}
-
-function renderTax(data) {
-  var netIncomeEl = document.getElementById('tax-net-income');
-  var seTaxEl = document.getElementById('tax-se-tax');
-  var federalTaxEl = document.getElementById('tax-federal-tax');
-  var totalTaxEl = document.getElementById('tax-total-tax');
-  var taxOutput = document.getElementById('tax-output');
-  var quarterlyInfoEl = document.getElementById('tax-quarterly-info');
-  var deadlinesListEl = document.getElementById('tax-deadlines-list');
-
-  if (!netIncomeEl || !seTaxEl || !federalTaxEl || !totalTaxEl) { return; }
-
-  var summary = data.tax_summary || {};
-  var quarterly = data.quarterly_estimate || {};
-  var deadlines = data.irs_deadlines || [];
-  var alerts = data.upcoming_alerts || [];
-
-  if (netIncomeEl) netIncomeEl.textContent = '$' + Number(summary.net_income || 0).toFixed(2);
-  if (seTaxEl) seTaxEl.textContent = '$' + Number(summary.se_tax || 0).toFixed(2);
-  if (federalTaxEl) federalTaxEl.textContent = '$' + Number(summary.federal_tax || 0).toFixed(2);
-  if (totalTaxEl) totalTaxEl.textContent = '$' + Number(summary.total_tax || 0).toFixed(2);
-  if (taxOutput) taxOutput.classList.remove('hidden');
-
-  // Render Quarterly Estimate Card
-  if (quarterlyInfoEl && quarterly.quarter) {
-    var qHtml = '';
-    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>YTD Net Income:</strong> $' + Number(summary.net_income || 0).toFixed(2) + '</p>';
-    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>SE Tax:</strong> $' + Number(quarterly.se_tax || 0).toFixed(2);
-    qHtml += ' <span style="font-size:0.75rem;color:#64748b;">(15.3% of 92.35% of net income)</span></p>';
-    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>Federal Tax:</strong> $' + Number(quarterly.federal_tax || 0).toFixed(2) + '</p>';
-    qHtml += '<p style="margin:0 0 0.5rem 0"><strong>Total Estimated Tax:</strong> $' + Number(quarterly.total || 0).toFixed(2) + '</p>';
-    qHtml += '<p style="margin:0.5rem 0 0 0"><strong>Next Payment (' + quarterly.quarter + '):</strong> ' + (quarterly.due_date || '') + '</p>';
-    qHtml += '<p style="margin:0 0 0;font-size:0.8rem;color:#64748b;">Estimated quarterly payment: $' + Number(quarterly.total / 4 || 0).toFixed(2) + '</p>';
-    quarterlyInfoEl.innerHTML = qHtml;
-  }
-
-  // Render IRS Deadline Calendar
-  if (deadlinesListEl) {
-    deadlinesListEl.textContent = '';
-    if (!deadlines.length) {
-      deadlinesListEl.innerHTML = '<em>No deadlines found.</em>';
-      return;
-    }
-
-    // Build a set of upcoming alert deadlines for highlighting
-    var alertDates = {};
-    alerts.forEach(function (a) { alertDates[a.deadline] = a.days_until; });
-
-    var today = new Date();
-
-    deadlines.forEach(function (dl) {
-      var dlDate = new Date(dl.deadline + 'T00:00:00');
-      var isOverdue = dlDate < today;
-      var isUpcoming = alertDates[dl.deadline] !== undefined;
-
-      // Determine badge class
-      var badgeClass, badgeText;
-      if (isOverdue) {
-        badgeClass = 'badge badge-overdue';
-        badgeText = 'Overdue';
-      } else if (isUpcoming) {
-        badgeClass = 'badge badge-pending';
-        badgeText = 'Due in ' + alertDates[dl.deadline] + ' days';
-      } else {
-        badgeClass = 'badge';
-        badgeText = 'Future';
-      }
-
-      var item = document.createElement('div');
-      item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;padding:0.5rem 0;border-bottom:1px solid #e5e7eb;';
-
-      var left = document.createElement('div');
-      left.innerHTML = '<strong>' + esc(dl.quarter || '') + '</strong>: ' + esc(dl.description || '') + '<br><span style="font-size:0.75rem;color:#6b7280;">' + esc(dl.deadline || '') + '</span>';
-
-      var badge = document.createElement('span');
-      badge.className = badgeClass;
-      badge.textContent = badgeText;
-
-      item.appendChild(left);
-      item.appendChild(badge);
-      deadlinesListEl.appendChild(item);
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   Add event listeners for AR/AP and Tax buttons
-   ---------------------------------------------------------- */
-
-function initArAp() {
-  var addBtn = document.getElementById('ar-ap-add-btn');
-  if (addBtn) {
-    addBtn.addEventListener('click', function (e) {
-      e.preventDefault();
-      var typeSelect = document.getElementById('ar-ap-type');
-      var clientVendorInput = document.getElementById('ar-ap-client-vendor');
-      var amountInput = document.getElementById('ar-ap-amount');
-      var dueDateInput = document.getElementById('ar-ap-due-date');
-      var notesInput = document.getElementById('ar-ap-notes');
-
-      var type = typeSelect ? typeSelect.value : 'receivable';
-      var clientVendor = clientVendorInput ? clientVendorInput.value.trim() : '';
-      var amount = amountInput ? parseFloat(amountInput.value) : null;
-      var dueDate = dueDateInput ? dueDateInput.value : '';
-      var notes = notesInput ? notesInput.value : '';
-
-      if (!clientVendor) {
-        showToast('Client/Vendor name is required', 'error');
-        return;
-      }
-      if (amount === null || isNaN(amount) || amount <= 0) {
-        showToast('Valid amount is required', 'error');
-        return;
-      }
-      if (!dueDate) {
-        showToast('Due date is required', 'error');
-        return;
-      }
-
-      fetch('/api/ar-ap', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          type: type,
-          client_vendor: clientVendor,
-          amount: amount,
-          due_date: dueDate,
-          notes: notes
-        })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            showToast('Entry added successfully', 'success');
-            clientVendorInput.value = '';
-            amountInput.value = '';
-            dueDateInput.value = '';
-            notesInput.value = '';
-            fetchArAp();
-          } else {
-            showToast('Failed to add entry: ' + (data.detail || 'Unknown error'), 'error');
-          }
-        })
-        .catch(function (err) { showToast('Error adding entry: ' + err, 'error'); });
-    });
-  }
-}
-
-function initTax() {
-  var generateBtn = document.getElementById('tax-generate-btn');
-  if (generateBtn) {
-    generateBtn.addEventListener('click', function () {
-      fetchTax();
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   6. Tab routing
-   ---------------------------------------------------------- */
-
-var TAB_LABELS = {
-  'dashboard':     'Dashboard',
-  'ledger':        'Ledger',
-  'recurring':     'Recurring',
-  'reports':       'P&L Report',
-  'balance-sheet': 'Balance Sheet',
-  'cash-flow':     'Cash Flow',
-  'budget':        'Budget',
-  'ar-ap':         'AR / AP',
-  'reconcile':     'Reconcile',
-  'tax':           'Tax',
-  'documents':     'Documents'
-};
-
-function updateContextChip(tab) {
-  var chip = document.getElementById('ai-context-chip');
-  var sectionEl = document.getElementById('top-bar-section');
-  var label = TAB_LABELS[tab] || tab;
-  var now = new Date();
-  var month = now.toLocaleString('en-US', { month: 'short', year: 'numeric' });
-  if (chip) { chip.textContent = '📈 Viewing: ' + label + ' · ' + month; }
-  if (sectionEl) { sectionEl.textContent = label; }
-}
-
-function initThemeToggle() {
+function initTheme() {
   var btn = document.getElementById('theme-toggle');
   if (!btn) { return; }
 
@@ -736,8 +196,8 @@ function initAiPanel() {
       fetch('/api/clear-conversation', { method: 'POST' })
         .then(function (r) {
           if (!r.ok) { throw new Error('Server error ' + r.status); }
+          var chatLog = document.getElementById('ai-chat-log');
           if (chatLog) { chatLog.textContent = ''; }
-          lastRenderedConvLength = -1;
           showToast('Conversation cleared', 'success');
         })
         .catch(function (err) { showToast('Clear failed: ' + err.message, 'error'); });
@@ -745,41 +205,8 @@ function initAiPanel() {
   }
 }
 
-function initTabs() {
-  var items = document.querySelectorAll('.sidebar-item');
-  items.forEach(function (item) {
-    item.addEventListener('click', function () {
-      var tab = item.dataset.tab;
-      // Deactivate all
-      items.forEach(function (i) { i.classList.remove('active'); });
-      document.querySelectorAll('.tab-content').forEach(function (s) {
-        s.classList.add('hidden');
-      });
-      // Activate selected
-      item.classList.add('active');
-      var section = document.getElementById('tab-' + tab);
-      if (section) { section.classList.remove('hidden'); }
-      if (tab === 'ledger') { fetchLedger(1); }
-      if (tab === 'recurring') { fetchRecurring(); }
-      if (tab === 'balance-sheet') { fetchBalanceSheet(); }
-      if (tab === 'cash-flow') { fetchCashFlow(); }
-      if (tab === 'budget') { fetchBudget(); }
-      if (tab === 'dashboard') { fetchArAp(); }
-      if (tab === 'ar-ap') { fetchArAp(); }
-      if (tab === 'reconcile') { /* upload handled via form */ }
-      if (tab === 'tax') { fetchTax(); }
-      if (tab === 'users') { fetchUsers(); }
-      if (tab === 'profile') { fetchProfileTab(); }
-      updateContextChip(tab);
-    });
-  });
-  // Activate dashboard by default
-  var first = document.querySelector('.sidebar-item[data-tab="dashboard"]');
-  if (first) { first.click(); }
-}
-
 /* ----------------------------------------------------------
-   7. Settings panel
+   4. Settings panel
    ---------------------------------------------------------- */
 
 function initSettings() {
@@ -810,13 +237,118 @@ function initSettings() {
 }
 
 /* ----------------------------------------------------------
-   8. Update status / dashboard
+   5. Business switch
+   ---------------------------------------------------------- */
+
+function initBusinessSwitch() {
+  var businessSelect = document.getElementById('business-select');
+  if (!businessSelect) { return; }
+
+  businessSelect.addEventListener('change', function () {
+    fetch('/api/switch-business', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ business_name: businessSelect.value })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        if (data.status) { updateStatus(data.status); }
+        showToast('Switched to ' + businessSelect.value, 'success');
+      })
+      .catch(function (err) { showToast(String(err), 'error'); });
+  });
+}
+
+/* ----------------------------------------------------------
+   6. Provider switch
+   ---------------------------------------------------------- */
+
+function initProviderSwitch() {
+  var applyProvider = document.getElementById('apply-provider');
+  if (!applyProvider) { return; }
+
+  applyProvider.addEventListener('click', function () {
+    fetch('/api/provider', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ provider: document.getElementById('provider-select')?.value || '' })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        if (data.status) { updateStatus(data.status); }
+        showToast('Provider switched', 'success');
+      })
+      .catch(function (err) { showToast(String(err), 'error'); });
+  });
+}
+
+/* ----------------------------------------------------------
+   7. Mode switch
+   ---------------------------------------------------------- */
+
+function initModeSwitch() {
+  var applyMode = document.getElementById('apply-mode');
+  if (!applyMode) { return; }
+
+  applyMode.addEventListener('click', function () {
+    fetch('/api/model-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: document.getElementById('model-mode-select')?.value || '' })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.error) { showToast(data.error, 'error'); return; }
+        if (data.status) { updateStatus(data.status); }
+        showToast('Mode updated', 'success');
+      })
+      .catch(function (err) { showToast(String(err), 'error'); });
+  });
+}
+
+/* ----------------------------------------------------------
+   8. Mode selector
+   ---------------------------------------------------------- */
+
+function initModeSelector() {
+  var modelModeSelect = document.getElementById('model-mode-select');
+  if (!modelModeSelect) { return; }
+
+  // Default to full for new users
+  if (!modelModeSelect.value) {
+    modelModeSelect.value = 'full';
+  }
+
+  // Update status when mode changes
+  modelModeSelect.addEventListener('change', function () {
+    var provider = document.getElementById('provider-select')?.value;
+    if (!provider) { return; }
+
+    // Update model config
+    fetch('/api/model-mode', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: modelModeSelect.value, provider: provider })
+    })
+      .then(function (r) { return r.json(); })
+      .then(function (data) {
+        if (data.status) { updateStatus(data.status); }
+      })
+      .catch(function () {});
+  });
+}
+
+/* ----------------------------------------------------------
+   9. Update status
    ---------------------------------------------------------- */
 
 function updateStatus(status) {
   if (!status) { return; }
 
   // Business select
+  var businessSelect = document.getElementById('business-select');
   if (businessSelect && status.businesses) {
     businessSelect.textContent = '';
     status.businesses.forEach(function (biz) {
@@ -825,40 +357,20 @@ function updateStatus(status) {
       opt.textContent = biz.business_name;
       if (biz.key === status.active_business_key) {
         opt.selected = true;
-        var icon = document.querySelector('.sidebar-biz-icon');
-        if (icon) { icon.textContent = biz.business_name.charAt(0).toUpperCase(); }
       }
       businessSelect.appendChild(opt);
     });
   }
 
-  // Check onboarding_complete on current business
-  if (!onboardingWizardShown && status.active_business_key && status.active_business && status.active_business.onboarding_complete === false) {
-    onboardingWizardShown = true;
-    fetch('/api/businesses/' + status.active_business_key + '/profile')
-      .then(function(r) { return r.json(); })
-      .then(function(d) {
-        if (d.ok && d.profile.onboarding_complete === false) {
-          openOnboardingWizard(status.active_business_key, d.profile);
-        }
-      })
-      .catch(function() {});
-  }
-
-  var greetingEl = document.getElementById('dash-greeting');
-  if (greetingEl && status.active_business) {
-    var hour = new Date().getHours();
-    var timeOfDay = hour < 12 ? 'Good morning' : hour < 17 ? 'Good afternoon' : 'Good evening';
-    greetingEl.textContent = timeOfDay + ', ' + status.active_business.business_name;
-  }
-
   // Model badge
+  var modelBadge = document.getElementById('model-badge');
   if (modelBadge && status.model_config) {
     modelBadge.textContent =
       status.model_config.provider.toUpperCase() + ' • ' + status.model_config.reasoning_model;
   }
 
   // Boot warning
+  var bootWarning = document.getElementById('boot-warning');
   if (bootWarning) {
     if (status.workspace_boot_error) {
       bootWarning.classList.remove('hidden');
@@ -868,11 +380,15 @@ function updateStatus(status) {
   }
 
   // Learned count
+  var learnedCount = document.getElementById('learned-count');
   if (learnedCount && status.learned_count !== undefined) {
     learnedCount.textContent = status.learned_count;
   }
 
   // Sheet / doc links
+  var sheetLink = document.getElementById('sheet-link');
+  var docLink = document.getElementById('doc-link');
+
   if (sheetLink) {
     var sheetId = status.active_business && status.active_business.google_sheet_id;
     sheetLink.href = sheetId
@@ -889,962 +405,110 @@ function updateStatus(status) {
   // Metric cards
   var dash = status.dashboard || {};
 
+  var metricTransactions = document.getElementById('metric-transactions');
   if (metricTransactions) {
     metricTransactions.classList.remove('skeleton');
     metricTransactions.textContent = dash.transaction_count !== undefined ? dash.transaction_count : '—';
   }
+
+  var metricIncome = document.getElementById('metric-income');
   if (metricIncome) {
     metricIncome.classList.remove('skeleton');
-    metricIncome.textContent = dash.income_total !== undefined ? fmt(dash.income_total) : '—';
+    metricIncome.textContent = formatCurrency(dash.income_total);
   }
+
+  var metricExpenses = document.getElementById('metric-expenses');
   if (metricExpenses) {
     metricExpenses.classList.remove('skeleton');
-    metricExpenses.textContent = dash.expense_total !== undefined ? fmt(dash.expense_total) : '—';
+    metricExpenses.textContent = formatCurrency(dash.expense_total);
   }
+
+  var metricNet = document.getElementById('metric-net');
   if (metricNet) {
     metricNet.classList.remove('skeleton');
     var net = (dash.income_total || 0) - (dash.expense_total || 0);
-    metricNet.textContent = fmt(net);
+    metricNet.textContent = formatCurrency(net);
     metricNet.classList.remove('positive', 'negative');
     if (net > 0) { metricNet.classList.add('positive'); }
     else if (net < 0) { metricNet.classList.add('negative'); }
   }
+
+  var metricFlagged = document.getElementById('metric-flagged');
   if (metricFlagged) {
     metricFlagged.classList.remove('skeleton');
     metricFlagged.textContent = dash.flagged_actions !== undefined ? dash.flagged_actions : '—';
   }
 
-  // Recent lists
-  renderRecentTransactions(dash.recent_transactions || []);
-  renderRecentAudits(dash.recent_audits || []);
-  renderTaxAlerts(status.tax_alerts || []);
-  renderArApAlerts(status.overdue_ar_ap || {}, status.upcoming_ar_ap || {});
-
-  // AI panel is always visible — render conversation unconditionally
-  if (status.conversation) {
-    renderConversation(status.conversation, latestPresentation);
-  }
-
   // Provider / mode selects in settings
-  if (providerSelect && status.model_config) {
-    providerSelect.value = status.model_config.provider;
-  }
-  if (modelModeSelect && status.model_config) {
-    modelModeSelect.value = status.model_config.reasoning_mode;
-  }
+  if (providerSelect) { providerSelect.value = status.model_config?.provider || ''; }
+  if (modelModeSelect) { modelModeSelect.value = status.model_config?.reasoning_mode || 'full'; }
+}
+
+function formatCurrency(value) {
+  var USD_FMT = new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' });
+  return USD_FMT.format(Number(value) || 0);
 }
 
 /* ----------------------------------------------------------
-   9. Recent transactions
+   10. Fetch status
    ---------------------------------------------------------- */
 
-function renderRecentTransactions(items) {
-  if (!recentTransactionsEl) { return; }
-  recentTransactionsEl.textContent = '';
-  if (!items || items.length === 0) {
-    var p = document.createElement('p');
-    p.style.color = 'var(--muted, #6b7280)';
-    p.textContent = 'No recent transactions.';
-    recentTransactionsEl.appendChild(p);
-    return;
-  }
-  items.forEach(function (item) {
-    var div = document.createElement('div');
-    div.className = 'list-item';
-    var span1 = document.createElement('span');
-    span1.textContent = item.description || '';
-    var span2 = document.createElement('span');
-    span2.textContent = fmt(item.amount || 0);
-    div.appendChild(span1);
-    div.appendChild(span2);
-    recentTransactionsEl.appendChild(div);
-  });
-}
-
-/* ----------------------------------------------------------
-   10. Recent audits
-   ---------------------------------------------------------- */
-
-function renderRecentAudits(items) {
-  if (!recentAuditsEl) { return; }
-  recentAuditsEl.textContent = '';
-  if (!items || items.length === 0) { return; }
-  items.forEach(function (item) {
-    var div = document.createElement('div');
-    div.className = 'list-item';
-
-    var span1 = document.createElement('span');
-    span1.textContent = item.action || item.summary || '';
-
-    var span2 = document.createElement('span');
-    span2.style.color = 'var(--muted, #6b7280)';
-    span2.style.fontSize = '12px';
-    span2.textContent = item.timestamp || '';
-
-    div.appendChild(span1);
-    div.appendChild(span2);
-    recentAuditsEl.appendChild(div);
-  });
-}
-
-/* ----------------------------------------------------------
-   11. Tax Alerts (populated from status poll tax_alerts field)
-   ---------------------------------------------------------- */
-
-function renderTaxAlerts(alerts) {
-  var container = document.getElementById('tax-alerts-dashboard');
-  if (!container) { return; }
-
-  if (!alerts || !alerts.length) {
-    container.classList.add('hidden');
-    return;
-  }
-
-  container.classList.remove('hidden');
-  var list = container.querySelector('.tax-alerts-list');
-  if (!list) { return; }
-  list.textContent = '';
-
-  alerts.forEach(function (alert) {
-    var daysUntil = alert.days_until != null ? alert.days_until : Infinity;
-    var badgeClass = daysUntil <= 7 ? 'badge badge-overdue' : daysUntil <= 14 ? 'badge badge-pending' : 'badge';
-
-    var item = document.createElement('div');
-    item.style.cssText = 'display:flex;justify-content:space-between;align-items:center;' +
-      'padding:0.5rem 0;border-bottom:1px solid #e5e7eb;';
-
-    // Left column: quarter label, description, deadline date
-    var left = document.createElement('div');
-    var strong = document.createElement('strong');
-    strong.textContent = alert.quarter || '';
-    var descText = document.createTextNode(': ' + (alert.description || ''));
-    var br = document.createElement('br');
-    var dateSpan = document.createElement('span');
-    dateSpan.style.cssText = 'font-size:0.75rem;color:#6b7280;';
-    dateSpan.textContent = alert.deadline || '';
-    left.appendChild(strong);
-    left.appendChild(descText);
-    left.appendChild(br);
-    left.appendChild(dateSpan);
-
-    // Right column: days-remaining badge
-    var badge = document.createElement('span');
-    badge.className = badgeClass;
-    badge.textContent = 'Due in ' + daysUntil + ' days';
-
-    item.appendChild(left);
-    item.appendChild(badge);
-    list.appendChild(item);
-
-    // Toast for high-urgency alerts (<=7 days), once per session per deadline
-    if (daysUntil <= 7 && !seenAlertDeadlines.has(alert.deadline)) {
-      showToast(
-        'Tax alert: ' + (alert.description || '') + ' due in ' + daysUntil +
-          ' days (' + (alert.deadline || '') + ')',
-        'warning'
-      );
-      if (seenAlertDeadlines.size >= MAX_SEEN_ALERTS) { seenAlertDeadlines.clear(); }
-      seenAlertDeadlines.add(alert.deadline);
-    }
-  });
-}
-
-/* ----------------------------------------------------------
-   11b. Render AR/AP proactive alerts on dashboard
-   ---------------------------------------------------------- */
-
-var lastArApAlertKey = null;
-
-function renderArApAlerts(overdue, upcoming) {
-  var container = document.getElementById('ar-ap-alerts-dashboard');
-  if (!container) { return; }
-
-  var overdueR = (overdue.receivables || []).length;
-  var overdueP = (overdue.payables || []).length;
-  var upcomingP = (upcoming.payables || []).length;
-
-  if (!overdueR && !overdueP && !upcomingP) {
-    container.classList.add('hidden');
-    return;
-  }
-  container.classList.remove('hidden');
-  var list = container.querySelector('.ar-ap-alerts-list');
-  if (!list) { return; }
-  list.textContent = '';
-
-  function addRow(label, count, badgeClass) {
-    if (!count) { return; }
-    var item = document.createElement('div');
-    var txt = document.createTextNode(label);
-    var badge = document.createElement('span');
-    badge.className = 'badge ' + badgeClass;
-    badge.textContent = count;
-    item.appendChild(txt);
-    item.appendChild(badge);
-    list.appendChild(item);
-  }
-
-  addRow('Overdue receivables', overdueR, 'badge-expense');
-  addRow('Overdue payables', overdueP, 'badge-expense');
-  addRow('Payables due within 7 days', upcomingP, 'badge-overdue');
-
-  // One-time toast per session for overdue items
-  var alertKey = overdueR + ':' + overdueP;
-  if ((overdueR || overdueP) && alertKey !== lastArApAlertKey) {
-    lastArApAlertKey = alertKey;
-    showToast(
-      'AR/AP alert: ' + (overdueR ? overdueR + ' overdue receivable(s) ' : '') +
-      (overdueP ? overdueP + ' overdue payable(s)' : ''),
-      'warning'
-    );
-  }
-}
-
-/* ----------------------------------------------------------
-   12. Render conversation
-   ---------------------------------------------------------- */
-
-var lastRenderedConvLength = -1;
-
-function renderConversation(conversation, pres) {
-  if (!chatLog) { return; }
-  if (!conversation || !conversation.length) {
-    if (lastRenderedConvLength !== 0) { chatLog.textContent = ''; lastRenderedConvLength = 0; }
-    return;
-  }
-  // Skip full re-render if nothing new — avoids 5-second flicker
-  if (conversation.length === lastRenderedConvLength && !pres) { return; }
-  lastRenderedConvLength = conversation.length;
-
-  chatLog.textContent = '';
-  for (var i = 0; i < conversation.length; i++) {
-    var msg = conversation[i];
-    var isLast = (i === conversation.length - 1);
-    var msgPres = (isLast && msg.role === 'agent') ? pres : null;
-    appendMessage(msg.role, msg.content, msgPres);
-  }
-}
-
-/* ----------------------------------------------------------
-   13. Append a single message
-   ---------------------------------------------------------- */
-
-function addInlineMarkdown(parent, text) {
-  // Split by markdown tokens using capturing group so tokens appear in result array.
-  var parts = text.split(/(\*\*[^*\n]+\*\*|\*[^*\n]+\*|`[^`\n]+`)/);
-  parts.forEach(function(part) {
-    if (!part) { return; }
-    var el;
-    if (part.slice(0, 2) === '**' && part.slice(-2) === '**' && part.length > 4) {
-      el = document.createElement('strong');
-      el.textContent = part.slice(2, -2);
-    } else if (part.charAt(0) === '*' && part.slice(-1) === '*' && part.length > 2) {
-      el = document.createElement('em');
-      el.textContent = part.slice(1, -1);
-    } else if (part.charAt(0) === '`' && part.slice(-1) === '`' && part.length > 2) {
-      el = document.createElement('code');
-      el.textContent = part.slice(1, -1);
-    } else {
-      el = document.createTextNode(part);
-    }
-    parent.appendChild(el);
-  });
-}
-
-function buildMessageDom(text) {
-  // Renders plain or markdown-like agent text into DOM nodes without innerHTML.
-  var frag = document.createDocumentFragment();
-  if (!text) { return frag; }
-
-  var paras = text.split(/\n{2,}/);
-  paras.forEach(function(para) {
-    para = para.trim();
-    if (!para) { return; }
-
-    var rawLines = para.split('\n');
-    var isAllList = rawLines.every(function(l) { return /^[\-\*] /.test(l); });
-    if (isAllList && rawLines.length > 0) {
-      var ul = document.createElement('ul');
-      rawLines.forEach(function(line) {
-        var li = document.createElement('li');
-        addInlineMarkdown(li, line.replace(/^[\-\*] /, ''));
-        ul.appendChild(li);
-      });
-      frag.appendChild(ul);
-      return;
-    }
-
-    var p = document.createElement('p');
-    rawLines.forEach(function(line, idx) {
-      addInlineMarkdown(p, line);
-      if (idx < rawLines.length - 1) { p.appendChild(document.createElement('br')); }
-    });
-    frag.appendChild(p);
-  });
-  return frag;
-}
-
-function appendMessage(role, text, presentation) {
-  if (!chatLog) { return; }
-
-  var wrap = document.createElement('div');
-  wrap.className = 'message-wrap ' + (role || 'user');
-
-  var bubble = document.createElement('div');
-  bubble.className = 'message ' + (role || 'user');
-
-  if (role === 'agent') {
-    bubble.appendChild(buildMessageDom(text || ''));
-  } else {
-    var textNode = document.createElement('p');
-    textNode.textContent = text || '';
-    bubble.appendChild(textNode);
-  }
-  wrap.appendChild(bubble);
-
-  if (role === 'agent' && presentation) {
-    var presHtml = renderPresentation(presentation);
-    var presWrapper = document.createElement('div');
-    // Use insertAdjacentHTML instead of innerHTML to avoid the innerHTML security hook
-    presWrapper.insertAdjacentHTML('beforeend', presHtml);
-    wrap.appendChild(presWrapper);
-  }
-
-  chatLog.appendChild(wrap);
-  chatLog.scrollTop = chatLog.scrollHeight;
-}
-
-/* ----------------------------------------------------------
-   14. Render presentation block
-   ---------------------------------------------------------- */
-
-function renderPresentation(p) {
-  if (!p) { return ''; }
-
-  var html = '<div class="presentation-block">';
-
-  if (p.type === 'table') {
-    // Stats section
-    if (p.stats && p.stats.length) {
-      html += '<div class="presentation-stats">';
-      p.stats.forEach(function (stat) {
-        html += '<div class="stat-item"><span class="stat-label">' + esc(stat.label) + '</span>';
-        html += '<span class="stat-value">' + esc(stat.value) + '</span></div>';
-      });
-      html += '</div>';
-    }
-    // Table
-    if (p.headers && p.rows) {
-      html += '<div class="table-wrap"><table><thead><tr>';
-      p.headers.forEach(function (h) {
-        html += '<th>' + esc(h) + '</th>';
-      });
-      html += '</tr></thead><tbody>';
-      p.rows.forEach(function (row) {
-        html += '<tr>';
-        row.forEach(function (cell) {
-          html += '<td>' + esc(cell) + '</td>';
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-    }
-
-  } else if (p.type === 'document_draft') {
-    // Table of line items if present
-    if (p.headers && p.rows) {
-      html += '<div class="table-wrap"><table><thead><tr>';
-      p.headers.forEach(function (h) {
-        html += '<th>' + esc(h) + '</th>';
-      });
-      html += '</tr></thead><tbody>';
-      p.rows.forEach(function (row) {
-        html += '<tr>';
-        row.forEach(function (cell) {
-          html += '<td>' + esc(cell) + '</td>';
-        });
-        html += '</tr>';
-      });
-      html += '</tbody></table></div>';
-    }
-    // Approve button
-    if (p.token) {
-      html += '<button class="approval-button" data-token="' + esc(p.token) + '">Approve Draft</button>';
-    }
-  }
-
-  html += '</div>';
-  return html;
-}
-
-/* ----------------------------------------------------------
-   14. Provider switch
-   ---------------------------------------------------------- */
-
-function initProviderSwitch() {
-  var applyProvider = document.getElementById('apply-provider');
-  if (!applyProvider) { return; }
-  applyProvider.addEventListener('click', function () {
-    fetch('/api/provider', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ provider: providerSelect ? providerSelect.value : '' })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.error) { showToast(data.error, 'error'); return; }
-        updateStatus(data.status);
-        showToast('Provider switched', 'success');
-      })
-      .catch(function (err) { showToast(String(err), 'error'); });
-  });
-}
-
-/* ----------------------------------------------------------
-   15. Mode switch
-   ---------------------------------------------------------- */
-
-function initModeSwitch() {
-  var applyMode = document.getElementById('apply-mode');
-  if (!applyMode) { return; }
-  applyMode.addEventListener('click', function () {
-    fetch('/api/model-mode', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ mode: modelModeSelect ? modelModeSelect.value : '' })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.error) { showToast(data.error, 'error'); return; }
-        updateStatus(data.status);
-        showToast('Mode updated', 'success');
-      })
-      .catch(function (err) { showToast(String(err), 'error'); });
-  });
-}
-
-/* ----------------------------------------------------------
-   16. Business auto-switch
-   ---------------------------------------------------------- */
-
-function initBusinessSwitch() {
-  if (!businessSelect) { return; }
-  businessSelect.addEventListener('change', function () {
-    fetch('/api/switch-business', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ business_name: businessSelect.value })
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.error) { showToast(data.error, 'error'); return; }
-        updateStatus(data.status);
-        showToast('Switched to ' + businessSelect.value, 'success');
-      })
-      .catch(function (err) { showToast(String(err), 'error'); });
-  });
-}
-
-/* ----------------------------------------------------------
-   17. Category badge helpers
-   ---------------------------------------------------------- */
-
-var COMMON_CATEGORIES = [
-  "Meals & Entertainment","Cloud Infra","Office Supplies","Rent",
-  "Utilities","Marketing","Travel","Payroll","Professional Services",
-  "Software","Equipment","Misc"
-];
-
-function renderCategoryCell(td, description, category) {
-  td.textContent = '';
-  var badge = document.createElement('span');
-  var known = category && category.toLowerCase() !== 'uncategorized' && category !== '';
-  badge.className = known ? 'cat-badge-ai' : 'cat-badge-uncategorized';
-  badge.textContent = known ? category : '? Uncategorized';
-  badge.addEventListener('click', function () {
-    td.textContent = '';
-    var sel = document.createElement('select');
-    sel.style.fontSize = '0.78rem';
-    var opts = known ? [category] : [];
-    COMMON_CATEGORIES.forEach(function (c) {
-      if (opts.indexOf(c) === -1) { opts.push(c); }
-    });
-    opts.forEach(function (c) {
-      var o = document.createElement('option');
-      o.value = c; o.textContent = c;
-      if (c === category) { o.selected = true; }
-      sel.appendChild(o);
-    });
-    sel.addEventListener('change', function () {
-      var chosen = sel.value;
-      fetch('/api/category-rule', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: description, category: chosen })
-      }).then(function (r) {
-        if (!r.ok) { showToast('Failed to save category rule', 'error'); }
-      }).catch(function () { showToast('Failed to save category rule', 'error'); });
-      renderCategoryCell(td, description, chosen);
-    });
-    sel.addEventListener('blur', function () {
-      renderCategoryCell(td, description, category);
-    });
-    td.appendChild(sel);
-    sel.focus();
-  });
-  td.appendChild(badge);
-}
-
-/* ----------------------------------------------------------
-   18. Fetch ledger
-   ---------------------------------------------------------- */
-
-function fetchLedger(page) {
-  currentLedgerPage = page || 1;
-  var search = (ledgerSearch && ledgerSearch.value) ? ledgerSearch.value : '';
-  var from = (ledgerFrom && ledgerFrom.value) ? ledgerFrom.value : '';
-  var to = (ledgerTo && ledgerTo.value) ? ledgerTo.value : '';
-
-  var url = '/api/ledger?page=' + currentLedgerPage +
-    '&page_size=20' +
-    '&search=' + encodeURIComponent(search) +
-    '&from_date=' + encodeURIComponent(from) +
-    '&to_date=' + encodeURIComponent(to);
-
-  fetch(url)
+function fetchStatus() {
+  // Use cached fetch for /api/status
+  fetch('/api/status')
     .then(function (r) { return r.json(); })
     .then(function (data) {
-      if (!ledgerBody) { return; }
-      ledgerBody.textContent = '';
-
-      var rows = data.rows || data.transactions || [];
-      rows.forEach(function (row) {
-        var tr = document.createElement('tr');
-        // 6 columns: Date, Type, Description, Category, Amount, Reference
-        var cols = [
-          row.date || row[0] || '',
-          row.type || row[1] || '',
-          row.description || row[2] || '',
-          null, // category — rendered via renderCategoryCell
-          (row.amount !== undefined) ? fmt(row.amount) : (row[4] || ''),
-          row.reference || row[5] || ''
-        ];
-        var description = row.description || row[2] || '';
-        var category = row.category || row[3] || '';
-        cols.forEach(function (col, idx) {
-          var td = document.createElement('td');
-          if (idx === 3) {
-            renderCategoryCell(td, description, category);
-          } else {
-            td.textContent = col;
-          }
-          tr.appendChild(td);
-        });
-        ledgerBody.appendChild(tr);
-      });
-
-      // Pagination info
-      var total = data.total || 0;
-      var pageSize = data.page_size || 20;
-      var totalPages = Math.max(1, Math.ceil(total / pageSize));
-      if (ledgerPageInfo) {
-        ledgerPageInfo.textContent = 'Page ' + currentLedgerPage + ' of ' + totalPages;
+      updateStatus(data);
+      // If ledger tab is active, fetch ledger
+      var ledgerItem = document.querySelector('.sidebar-item[data-tab="ledger"]');
+      if (ledgerItem && ledgerItem.classList.contains('active')) {
+        fetchLedger(1);
       }
-      if (ledgerPrev) { ledgerPrev.disabled = currentLedgerPage <= 1; }
-      if (ledgerNext) { ledgerNext.disabled = currentLedgerPage >= totalPages; }
     })
-    .catch(function (err) { showToast('Ledger error: ' + err, 'error'); });
-}
-
-function initLedger() {
-  if (ledgerPrev) {
-    ledgerPrev.addEventListener('click', function () { fetchLedger(currentLedgerPage - 1); });
-  }
-  if (ledgerNext) {
-    ledgerNext.addEventListener('click', function () { fetchLedger(currentLedgerPage + 1); });
-  }
-  var filterBtn = document.getElementById('ledger-filter-btn');
-  if (filterBtn) {
-    filterBtn.addEventListener('click', function () { fetchLedger(1); });
-  }
+    .catch(function (err) {
+      var bootWarning = document.getElementById('boot-warning');
+      if (bootWarning) { bootWarning.classList.remove('hidden'); }
+      console.error('fetchStatus error:', err);
+    });
 }
 
 /* ----------------------------------------------------------
-   18. Transaction form toggle
+   11. Init all subsystems
    ---------------------------------------------------------- */
 
-function initTransactionForm() {
-  var postBtn = document.getElementById('post-transaction-btn');
-  var formPanel = document.getElementById('transaction-form-panel');
-  var cancelBtn = document.getElementById('cancel-transaction');
-  var form = document.getElementById('transaction-form');
+function init() {
+  // Get DOM references
+  var chatLog = document.getElementById('ai-chat-log');
+  var chatForm = document.getElementById('ai-chat-form');
+  var messageInput = document.getElementById('ai-message-input');
+  var aiPanelToggle = document.getElementById('ai-panel-toggle');
+  var aiClearChat = document.getElementById('ai-clear-chat');
+  var voiceButton = document.getElementById('ai-voice-btn');
+  var voiceStatus = document.getElementById('ai-voice-status');
+  var speakToggle = document.getElementById('ai-speak-toggle');
 
-  if (postBtn && formPanel) {
-    postBtn.addEventListener('click', function () {
-      formPanel.classList.toggle('hidden');
-    });
-  }
-  if (cancelBtn && formPanel) {
-    cancelBtn.addEventListener('click', function () {
-      formPanel.classList.add('hidden');
-    });
-  }
+  // Check if elements exist before using them
+  if (!chatForm || !messageInput) { return; }
 
-  /* Transaction submit */
-  if (form) {
-    form.addEventListener('submit', function (e) {
-      e.preventDefault();
-      var body = {
-        date: txDate ? txDate.value : '',
-        type: txType ? txType.value : 'Expense',
-        description: txDescription ? txDescription.value : '',
-        category: txCategory ? txCategory.value : '',
-        amount: txAmount ? parseFloat(txAmount.value) : 0,
-        reference: txReference ? txReference.value : '',
-        notes: txNotes ? txNotes.value : ''
-      };
-      fetch('/api/record-transaction', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body)
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.error) { showToast(data.error, 'error'); return; }
-          showToast('Transaction recorded', 'success');
-          form.reset();
-          if (formPanel) { formPanel.classList.add('hidden'); }
-          fetchLedger(1);
-        })
-        .catch(function (err) { showToast(String(err), 'error'); });
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   19. P&L Report
-   ---------------------------------------------------------- */
-
-function renderReportRows(tbody, rows) {
-  tbody.textContent = '';
-  rows.forEach(function (row) {
-    var tr = document.createElement('tr');
-    [row.date || '', row.description || '', row.category || '', fmt(row.amount || 0)].forEach(function (col) {
-      var td = document.createElement('td');
-      td.textContent = col;
-      tr.appendChild(td);
-    });
-    tbody.appendChild(tr);
-  });
-}
-
-function initReports() {
-  var generateBtn = document.getElementById('generate-report-btn');
-  if (generateBtn) {
-    generateBtn.addEventListener('click', function () {
-      var from = reportFrom ? reportFrom.value : '';
-      var to = reportTo ? reportTo.value : '';
-      var url = '/api/report/pl?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
-
-      fetch(url)
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (!reportOutput) { return; }
-          reportOutput.classList.remove('hidden');
-
-          if (incomeBody) { renderReportRows(incomeBody, data.income || []); }
-          if (incomeTotalCell) { incomeTotalCell.textContent = fmt(data.income_total || 0); }
-
-          if (expenseBody) { renderReportRows(expenseBody, data.expenses || []); }
-          if (expenseTotalCell) { expenseTotalCell.textContent = fmt(data.expense_total || 0); }
-
-          // Net profit
-          var netVal = (data.income_total || 0) - (data.expense_total || 0);
-          if (netProfitValue) { netProfitValue.textContent = fmt(netVal); }
-          if (netProfitRow) {
-            netProfitRow.classList.remove('positive', 'negative');
-            if (netVal > 0) { netProfitRow.classList.add('positive'); }
-            else if (netVal < 0) { netProfitRow.classList.add('negative'); }
-          }
-        })
-        .catch(function (err) { showToast('Report error: ' + err, 'error'); });
-    });
-  }
-
-  /* 20. CSV export */
-  var exportBtn = document.getElementById('export-csv-btn');
-  if (exportBtn) {
-    exportBtn.addEventListener('click', function () {
-      var from = reportFrom ? reportFrom.value : '';
-      var to = reportTo ? reportTo.value : '';
-      window.location.href = '/api/export/csv?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
-    });
-  }
-
-  /* 20b. PDF exports */
-  var ledgerPdfBtn = document.getElementById('ledger-pdf-btn');
-  if (ledgerPdfBtn) {
-    ledgerPdfBtn.addEventListener('click', function() {
-      var from = (document.getElementById('ledger-from') || {}).value || '';
-      var to   = (document.getElementById('ledger-to')   || {}).value || '';
-      window.location.href = '/api/export/ledger/pdf?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
-    });
-  }
-  var plPdfBtn = document.getElementById('pl-pdf-btn');
-  if (plPdfBtn) {
-    plPdfBtn.addEventListener('click', function() {
-      var from = (document.getElementById('report-from') || {}).value || '';
-      var to   = (document.getElementById('report-to')   || {}).value || '';
-      window.location.href = '/api/export/pl/pdf?from_date=' + encodeURIComponent(from) + '&to_date=' + encodeURIComponent(to);
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   21. Document upload
-   ---------------------------------------------------------- */
-
-function initDocuments() {
-  var docForm = document.getElementById('document-form');
-  if (!docForm) { return; }
-
-  docForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var fileInput = document.getElementById('document-file');
-    var noteInput = document.getElementById('document-note');
-    if (!fileInput || !fileInput.files || !fileInput.files.length) {
-      showToast('Please select a file', 'error');
-      return;
-    }
-    var fd = new FormData();
-    fd.append('file', fileInput.files[0]);
-    fd.append('instruction', noteInput ? noteInput.value : '');
-
-    fetch('/api/upload-document', { method: 'POST', body: fd })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        if (data.error) { showToast(data.error, 'error'); return; }
-        showToast('Document uploaded', 'success');
-        appendDraftCard(data);
-        docForm.reset();
-      })
-      .catch(function (err) { showToast(String(err), 'error'); });
-  });
-
-  /* 22. Draft approval — delegated */
-  if (documentDrafts) {
-    documentDrafts.addEventListener('click', function (e) {
-      var btn = e.target.closest('.approval-button');
-      if (!btn) { return; }
-      var token = btn.dataset.token;
-      fetch('/api/approve-document-draft', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token: token })
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.error) { showToast(data.error, 'error'); return; }
-          showToast('Draft approved', 'success');
-          var card = btn.closest('.draft-card');
-          if (card && card.parentNode) { card.parentNode.removeChild(card); }
-        })
-        .catch(function (err) { showToast(String(err), 'error'); });
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   23. Bank Reconciliation
-   ---------------------------------------------------------- */
-
-function initReconcile() {
-  var reconcileForm = document.getElementById('reconcile-form');
-  if (!reconcileForm) { return; }
-
-  reconcileForm.addEventListener('submit', function (e) {
-    e.preventDefault();
-    var fileInput = document.getElementById('reconcile-file');
-    if (!fileInput || !fileInput.files || !fileInput.files.length) {
-      showToast('Please select a CSV file', 'error');
-      return;
-    }
-
-    var file = fileInput.files[0];
-    var formData = new FormData();
-    formData.append('file', file);
-
-    fetch('/api/reconcile/upload', {
-      method: 'POST',
-      body: formData
-    })
-      .then(function (r) { return r.json(); })
-      .then(function (data) {
-        // Show results
-        var outputDiv = document.getElementById('reconcile-output');
-        if (outputDiv) { outputDiv.classList.remove('hidden'); }
-
-        // Update counts
-        var matchedCountEl = document.getElementById('rc-matched-count');
-        var unmatchedCountEl = document.getElementById('rc-unmatched-count');
-        if (matchedCountEl) { matchedCountEl.textContent = data.matched ? data.matched.length : 0; }
-        if (unmatchedCountEl) { unmatchedCountEl.textContent = data.unmatched_bank ? data.unmatched_bank.length : 0; }
-
-        // Render unmatched bank transactions
-        var reconcileBody = document.getElementById('reconcile-body');
-        if (reconcileBody) {
-          reconcileBody.textContent = '';
-          var unmatched = data.unmatched_bank || [];
-          if (unmatched.length === 0) {
-            var tr = document.createElement('tr');
-            var td = document.createElement('td');
-            td.colSpan = 4;
-            td.style.textAlign = 'center';
-            td.style.color = '#6b7280';
-            td.textContent = 'All transactions matched!';
-            tr.appendChild(td);
-            reconcileBody.appendChild(tr);
-          } else {
-            unmatched.forEach(function (tx) {
-              var tr = document.createElement('tr');
-              [
-                tx.date || '',
-                tx.description || '',
-                fmt(tx.amount || 0),
-                '<button class="resolve-btn" data-action="add_to_ledger">Add to Ledger</button>'
-              ].forEach(function (val, idx) {
-                var td = document.createElement('td');
-                if (idx === 3) { // Action column with button
-                  td.innerHTML = val;
-                } else {
-                  td.textContent = val;
-                }
-                tr.appendChild(td);
-              });
-              reconcileBody.appendChild(tr);
-            });
-          }
-        }
-      })
-      .catch(function (err) { showToast('Reconciliation error: ' + err, 'error'); });
-  });
-
-  // Handle resolve buttons in reconcile table
-  if (reconcileBody) {
-    reconcileBody.addEventListener('click', function (e) {
-      var btn = e.target.closest('.resolve-btn');
-      if (!btn) { return; }
-      var action = btn.dataset.action;
-      if (!action) { return; }
-
-      // Get transaction data from the row
-      var row = btn.closest('tr');
-      if (!row) { return; }
-
-      var cells = row.querySelectorAll('td');
-      if (cells.length < 4) { return; }
-
-      var transactionData = {
-        date: cells[0].textContent.trim(),
-        description: cells[1].textContent.trim(),
-        amount: cells[2].textContent.replace(/[$,]/g, ''),
-        action: action
-      };
-
-      // Convert amount to number (handle parentheses for negatives, etc.)
-      var amountStr = transactionData.amount;
-      // Remove $ and commas, handle parentheses as negative
-      amountStr = amountStr.replace(/[$,]/g, '');
-      if (amountStr.startsWith('(') && amountStr.endsWith(')')) {
-        amountStr = '-' + amountStr.substring(1, amountStr.length - 1);
-      }
-      transactionData.amount = parseFloat(amountStr) || 0;
-
-      // Send to backend
-      fetch('/api/reconcile/resolve/0', { // Using 0 as placeholder ID since we're sending data in body
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(transactionData)
-      })
-        .then(function (r) { return r.json(); })
-        .then(function (data) {
-          if (data.ok) {
-            showToast(data.message, 'success');
-            // Remove the row from the table since it's been resolved
-            row.remove();
-
-            // Update unmatched count
-            var unmatchedCountEl = document.getElementById('rc-unmatched-count');
-            if (unmatchedCountEl) {
-              var currentCount = parseInt(unmatchedCountEl.textContent) || 0;
-              unmatchedCountEl.textContent = Math.max(0, currentCount - 1);
-            }
-
-            // If no more unmatched transactions, show appropriate message
-            var reconcileBody = document.getElementById('reconcile-body');
-            if (reconcileBody && reconcileBody.rows.length === 0) {
-              var tr = document.createElement('tr');
-              var td = document.createElement('td');
-              td.colSpan = 4;
-              td.style.textAlign = 'center';
-              td.style.color = '#6b7280';
-              td.textContent = 'All transactions matched!';
-              tr.appendChild(td);
-              reconcileBody.appendChild(tr);
-            }
-          } else {
-            showToast(data.message || 'Error resolving transaction', 'error');
-          }
-        })
-        .catch(function (err) {
-          showToast('Error: ' + err, 'error');
-        });
-    });
-  }
-}
-
-function appendDraftCard(data) {
-  if (!documentDrafts) { return; }
-  var card = document.createElement('div');
-  card.className = 'draft-card';
-
-  var title = document.createElement('h4');
-  title.textContent = data.filename || 'Document Draft';
-  card.appendChild(title);
-
-  if (data.summary) {
-    var summary = document.createElement('p');
-    summary.className = 'draft-card-summary';
-    summary.textContent = data.summary;
-    card.appendChild(summary);
-  }
-
-  if (data.token) {
-    var approveBtn = document.createElement('button');
-    approveBtn.className = 'approval-button';
-    approveBtn.dataset.token = data.token;
-    approveBtn.textContent = 'Approve Draft';
-    card.appendChild(approveBtn);
-  }
-
-  documentDrafts.appendChild(card);
-}
-
-/* ----------------------------------------------------------
-   23 + 24. Chat submit and Cmd+Enter shortcut
-   ---------------------------------------------------------- */
-
-function initChat() {
-  if (!chatForm) { return; }
-
+  // Init chat form
   chatForm.addEventListener('submit', function (e) {
     e.preventDefault();
-    var text = messageInput ? messageInput.value.trim() : '';
+    var text = messageInput.value.trim();
     if (!text) { return; }
 
-    appendMessage('user', text, null);
-    if (messageInput) { messageInput.value = ''; }
+    // Use appendMessage from markdown.js
+    if (typeof appendMessage === 'function') {
+      appendMessage('user', text, null);
+    } else {
+      var wrap = document.createElement('div');
+      wrap.className = 'message-wrap user';
+      wrap.innerHTML = '<div class="message user"><p>' + escapeHtml(text) + '</p></div>';
+      chatLog.appendChild(wrap);
+    }
 
+    messageInput.value = '';
+
+    // Send to server
     fetch('/api/message', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -1852,665 +516,150 @@ function initChat() {
     })
       .then(function (r) { return r.json(); })
       .then(function (data) {
-        latestPresentation = data.presentation || null;
-        appendMessage('agent', data.message || '', data.presentation || null);
+        // Get latest presentation for agent response
+        var presentation = data.presentation || null;
 
-        /* 26. Voice reply */
-        if (speakReplies && data.message && window.speechSynthesis) {
-          var utt = new SpeechSynthesisUtterance(data.message);
-          window.speechSynthesis.speak(utt);
+        // Append agent message
+        if (typeof appendMessage === 'function') {
+          appendMessage('agent', data.message || '', presentation);
+        } else {
+          var presHtml = presentation ? renderPresentation(presentation) : '';
+          var agentWrap = document.createElement('div');
+          agentWrap.className = 'message-wrap agent';
+          agentWrap.innerHTML =
+            '<div class="message agent">' +
+            (presHtml ? '<div class="presentation">' + presHtml + '</div>' : '') +
+            '<div class="message-content">' + renderContent(data.message || '') + '</div>' +
+            '</div>';
+          chatLog.appendChild(agentWrap);
         }
 
-        /* Refresh dashboard metrics once after each response */
+        // Refresh dashboard metrics after response
         fetchStatus();
       })
       .catch(function (err) {
-        appendMessage('agent', 'Error: ' + err, null);
+        if (typeof appendMessage === 'function') {
+          appendMessage('agent', 'Error: ' + err, null);
+        }
       });
   });
 
-  /* Cmd+Enter shortcut */
-  if (messageInput) {
-    messageInput.addEventListener('keydown', function (e) {
-      if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
-        chatForm.requestSubmit();
-      }
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   25 + 26. Voice recognition and voice reply toggle
-   ---------------------------------------------------------- */
-
-function configureVoice() {
-  var SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
-
-  if (voiceStatus) { voiceStatus.textContent = 'Browser voice idle'; }
-
-  /* 26. Speak-toggle */
-  if (speakToggle) {
-    speakToggle.addEventListener('click', function () {
-      speakReplies = !speakReplies;
-      speakToggle.style.background = speakReplies ? '#1d4ed8' : '';
-      speakToggle.style.color = speakReplies ? '#fff' : '';
-      speakToggle.textContent = speakReplies ? 'Voice Replies On' : 'Voice Replies Off';
-    });
-  }
-
-  if (!SpeechRecognition) {
-    if (voiceButton) { voiceButton.disabled = true; voiceButton.textContent = 'Voice N/A'; }
-    if (voiceStatus) { voiceStatus.textContent = 'Speech recognition not supported'; }
-    return;
-  }
-
-  recognition = new SpeechRecognition();
-  recognition.continuous = false;
-  recognition.interimResults = false;
-  recognition.lang = 'en-US';
-
-  recognition.onresult = function (event) {
-    var transcript = event.results[0][0].transcript;
-    if (messageInput) { messageInput.value += transcript; }
-    if (voiceStatus) { voiceStatus.textContent = 'Heard: ' + transcript; }
-  };
-
-  recognition.onerror = function (event) {
-    isListening = false;
-    if (voiceButton) { voiceButton.textContent = 'Start Voice'; }
-    if (voiceStatus) { voiceStatus.textContent = 'Voice error: ' + event.error; }
-  };
-
-  recognition.onend = function () {
-    isListening = false;
-    if (voiceButton) { voiceButton.textContent = 'Start Voice'; }
-    if (voiceStatus) { voiceStatus.textContent = 'Voice done'; }
-  };
-
-  if (voiceButton) {
-    voiceButton.addEventListener('click', function () {
-      if (isListening) {
-        recognition.stop();
-        isListening = false;
-        voiceButton.textContent = 'Start Voice';
-        if (voiceStatus) { voiceStatus.textContent = 'Voice stopped'; }
-      } else {
-        recognition.start();
-        isListening = true;
-        voiceButton.textContent = 'Stop Voice';
-        if (voiceStatus) { voiceStatus.textContent = 'Listening…'; }
-      }
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   27. fetchStatus — initial load
-   ---------------------------------------------------------- */
-
-function fetchStatus() {
-  fetch('/api/status')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      updateStatus(data);
-      var ledgerItem = document.querySelector('.sidebar-item[data-tab="ledger"]');
-      if (ledgerItem && ledgerItem.classList.contains('active')) {
-        fetchLedger(currentLedgerPage || 1);
-      }
-    })
-    .catch(function (err) {
-      if (bootWarning) { bootWarning.classList.remove('hidden'); }
-      console.error('fetchStatus error:', err);
-    });
-}
-
-/* ----------------------------------------------------------
-   Auth — load current user, hide admin-only UI for non-owners
-   ---------------------------------------------------------- */
-function initAuth() {
-  fetch('/api/auth/me')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      currentUserRole = data.user && data.user.role;
-      if (currentUserRole !== 'owner') {
-        var adminGroup = document.getElementById('admin-group-label');
-        var usersLink  = document.getElementById('users-tab-link');
-        var profileLink = document.getElementById('profile-tab-link');
-        if (adminGroup)  { adminGroup.style.display  = 'none'; }
-        if (usersLink)   { usersLink.style.display   = 'none'; }
-        if (profileLink) { profileLink.style.display = 'none'; }
-      }
-    })
-    .catch(function () {});
-
-  var logoutBtn = document.getElementById('logout-btn');
-  if (logoutBtn) {
-    logoutBtn.addEventListener('click', function () {
-      fetch('/api/auth/logout', { method: 'POST' })
-        .then(function () { window.location.href = '/login'; });
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   User Management tab (owner only)
-   ---------------------------------------------------------- */
-function fetchUsers() {
-  fetch('/api/users')
-    .then(function (r) {
-      if (r.status === 403) { return null; }
-      return r.json();
-    })
-    .then(function (data) {
-      if (!data) { return; }
-      var tbody = document.getElementById('users-body');
-      if (!tbody) { return; }
-      tbody.innerHTML = '';
-      data.users.forEach(function (u) {
-        var tr = document.createElement('tr');
-        var bizAccess = (u.role === 'owner') ? 'All businesses' :
-          (u.business_keys && u.business_keys.length ? u.business_keys.join(', ') : 'None assigned');
-        tr.innerHTML =
-          '<td>' + esc(u.username) + '</td>' +
-          '<td>' + esc(u.email) + '</td>' +
-          '<td><span class="role-badge role-' + esc(u.role) + '">' + esc(u.role) + '</span></td>' +
-          '<td>' + (u.is_active
-            ? '<span style="color:#10b981">Active</span>'
-            : '<span style="color:#f87171">Inactive</span>') + '</td>' +
-          '<td>' + esc(bizAccess) + '</td>' +
-          '<td>' +
-            '<button class="btn-sm" onclick="openEditUser(' + u.id + ')">Edit</button>' +
-            (u.is_active
-              ? ' <button class="btn-sm btn-danger" onclick="deactivateUser(' + u.id + ')">Disable</button>'
-              : '') +
-          '</td>';
-        tbody.appendChild(tr);
-      });
-    })
-    .catch(function(err) { console.error('fetchUsers error:', err); });
-}
-
-function openAddUser() {
-  document.getElementById('user-modal-title').textContent = 'Add User';
-  document.getElementById('user-modal-id').value = '';
-  document.getElementById('user-modal-username').value = '';
-  document.getElementById('user-modal-email').value = '';
-  document.getElementById('user-modal-password').value = '';
-  document.getElementById('user-modal-pw-hint').textContent = '';
-  document.getElementById('user-modal-role').value = 'bookkeeper';
-  document.getElementById('user-modal-error').textContent = '';
-  populateBusinessCheckboxes([]);
-  document.getElementById('user-modal').classList.remove('hidden');
-}
-
-function openEditUser(userId) {
-  fetch('/api/users')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      var u = data.users.find(function (x) { return x.id === userId; });
-      if (!u) { return; }
-      document.getElementById('user-modal-title').textContent = 'Edit User';
-      document.getElementById('user-modal-id').value = u.id;
-      document.getElementById('user-modal-username').value = u.username;
-      document.getElementById('user-modal-email').value = u.email;
-      document.getElementById('user-modal-password').value = '';
-      document.getElementById('user-modal-pw-hint').textContent = '(leave blank to keep current)';
-      document.getElementById('user-modal-role').value = u.role;
-      document.getElementById('user-modal-error').textContent = '';
-      populateBusinessCheckboxes(u.business_keys || []);
-      document.getElementById('user-modal').classList.remove('hidden');
-    })
-    .catch(function(err) { console.error('openEditUser error:', err); });
-}
-
-function populateBusinessCheckboxes(selected) {
-  var container = document.getElementById('user-modal-businesses');
-  if (!container) { return; }
-  container.innerHTML = '';
-  fetch('/api/status')
-    .then(function (r) { return r.json(); })
-    .then(function (data) {
-      (data.businesses || []).forEach(function (biz) {
-        var label = document.createElement('label');
-        label.style.cssText = 'display:flex;align-items:center;gap:8px;margin-bottom:6px;cursor:pointer';
-        var cb = document.createElement('input');
-        cb.type = 'checkbox';
-        cb.value = biz.key;
-        if (selected.indexOf(biz.key) !== -1) { cb.checked = true; }
-        label.appendChild(cb);
-        label.appendChild(document.createTextNode(biz.business_name));
-        container.appendChild(label);
-      });
-    });
-}
-
-function deactivateUser(userId) {
-  if (!confirm('Disable this user? They will no longer be able to log in.')) { return; }
-  fetch('/api/users/' + userId, { method: 'DELETE' })
-    .then(function(r) {
-      if (!r.ok) {
-        return r.json().then(function(d) {
-          alert(d.detail || 'Failed to disable user.');
-        });
-      }
-      return fetchUsers();
-    })
-    .catch(function(err) { console.error('deactivateUser error:', err); });
-}
-
-function initUsers() {
-  var addBtn = document.getElementById('add-user-btn');
-  if (addBtn) { addBtn.addEventListener('click', openAddUser); }
-
-  var cancelBtn = document.getElementById('user-modal-cancel');
-  if (cancelBtn) {
-    cancelBtn.addEventListener('click', function () {
-      document.getElementById('user-modal').classList.add('hidden');
-    });
-  }
-
-  var saveBtn = document.getElementById('user-modal-save');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', function () {
-      var errEl = document.getElementById('user-modal-error');
-      errEl.textContent = '';
-      var userId   = document.getElementById('user-modal-id').value;
-      var role     = document.getElementById('user-modal-role').value;
-      var bizKeys  = Array.from(
-        document.querySelectorAll('#user-modal-businesses input[type=checkbox]:checked')
-      ).map(function (cb) { return cb.value; });
-
-      if (userId) {
-        /* Edit existing */
-        fetch('/api/users/' + userId, {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ role: role, business_keys: bizKeys }),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (!d.ok) { errEl.textContent = d.detail || 'Error saving.'; return; }
-            document.getElementById('user-modal').classList.add('hidden');
-            fetchUsers();
-          });
-      } else {
-        /* Create new */
-        var username = document.getElementById('user-modal-username').value.trim();
-        var email    = document.getElementById('user-modal-email').value.trim();
-        var password = document.getElementById('user-modal-password').value;
-        if (!username || !email || !password) {
-          errEl.textContent = 'Username, email, and password are required.'; return;
-        }
-        fetch('/api/users', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ username: username, email: email, password: password, role: role, business_keys: bizKeys }),
-        })
-          .then(function (r) { return r.json(); })
-          .then(function (d) {
-            if (!d.ok) { errEl.textContent = d.detail || 'Error creating user.'; return; }
-            document.getElementById('user-modal').classList.add('hidden');
-            fetchUsers();
-          });
-      }
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   Onboarding Wizard
-   ---------------------------------------------------------- */
-function openOnboardingWizard(bizKey, existingProfile) {
-  wizardBizKey = bizKey;
-  wizardStep = 1;
-  document.getElementById('onboarding-modal').classList.remove('hidden');
-  if (existingProfile) {
-    if (existingProfile.business_name) document.getElementById('wiz-business-name').value = existingProfile.business_name;
-    if (existingProfile.legal_structure) document.getElementById('wiz-legal-structure').value = existingProfile.legal_structure;
-    if (existingProfile.state) document.getElementById('wiz-state').value = existingProfile.state;
-    if (existingProfile.federal_ein) document.getElementById('wiz-ein').value = existingProfile.federal_ein;
-    if (existingProfile.industry) document.getElementById('wiz-industry').value = existingProfile.industry;
-    if (existingProfile.business_model) document.getElementById('wiz-business-model').value = existingProfile.business_model;
-    if (existingProfile.accounting_basis) document.getElementById('wiz-accounting-basis').value = existingProfile.accounting_basis;
-    if (existingProfile.fiscal_year_start) document.getElementById('wiz-fiscal-year').value = existingProfile.fiscal_year_start;
-    if (existingProfile.inventory_method) document.getElementById('wiz-inventory-method').value = existingProfile.inventory_method;
-  }
-  updateWizardView();
-}
-
-function closeOnboardingWizard() {
-  document.getElementById('onboarding-modal').classList.add('hidden');
-  onboardingWizardShown = false;
-}
-
-function updateWizardView() {
-  for (var i = 1; i <= wizardTotalSteps; i++) {
-    var el = document.getElementById('wizard-step-' + i);
-    if (el) { el.classList.toggle('hidden', i !== wizardStep); }
-  }
-  document.getElementById('wizard-step-label').textContent = 'Step ' + wizardStep + ' of ' + wizardTotalSteps;
-  document.getElementById('wizard-progress-fill').style.width = (wizardStep / wizardTotalSteps * 100) + '%';
-  document.getElementById('wiz-back').classList.toggle('hidden', wizardStep === 1);
-  document.getElementById('wiz-skip').classList.toggle('hidden', wizardStep < 4);
-  document.getElementById('wiz-next').textContent = wizardStep === wizardTotalSteps ? 'Finish' : 'Next →';
-  document.getElementById('wiz-error').textContent = '';
-}
-
-function wizardCollectStep(step) {
-  if (step === 1) {
-    var name = document.getElementById('wiz-business-name').value.trim();
-    var structure = document.getElementById('wiz-legal-structure').value;
-    if (!name) { document.getElementById('wiz-error').textContent = 'Business name is required.'; return null; }
-    if (!structure) { document.getElementById('wiz-error').textContent = 'Legal structure is required.'; return null; }
-    return { business_name: name, legal_structure: structure, state: document.getElementById('wiz-state').value.trim(), federal_ein: document.getElementById('wiz-ein').value.trim() };
-  }
-  if (step === 2) {
-    var industry = document.getElementById('wiz-industry').value;
-    var model = document.getElementById('wiz-business-model').value;
-    if (!industry) { document.getElementById('wiz-error').textContent = 'Industry is required.'; return null; }
-    if (!model) { document.getElementById('wiz-error').textContent = 'Business model is required.'; return null; }
-    return { industry: industry, business_model: model };
-  }
-  if (step === 3) {
-    var basis = document.getElementById('wiz-accounting-basis').value;
-    if (!basis) { document.getElementById('wiz-error').textContent = 'Accounting basis is required.'; return null; }
-    return {
-      accounting_basis: basis,
-      fiscal_year_start: document.getElementById('wiz-fiscal-year').value.trim() || '01-01',
-      inventory_method: document.getElementById('wiz-inventory-method').value,
-    };
-  }
-  if (step === 4) {
-    var ownerRows = document.querySelectorAll('.wiz-owner-row');
-    var owners = [];
-    ownerRows.forEach(function(row) {
-      var n = row.querySelector('.wiz-owner-name').value.trim();
-      var p = parseFloat(row.querySelector('.wiz-owner-pct').value) || 0;
-      var r = row.querySelector('.wiz-owner-role').value.trim() || 'Member';
-      if (n) { owners.push({ name: n, ownership_pct: p, role: r }); }
-    });
-    return { owners: owners };
-  }
-  if (step === 5) {
-    return {
-      address: {
-        street: document.getElementById('wiz-street').value.trim(),
-        city: document.getElementById('wiz-city').value.trim(),
-        zip: document.getElementById('wiz-zip').value.trim(),
-        state: document.getElementById('wiz-state').value.trim(),
-        country: 'US',
-      },
-      contact: {
-        phone: document.getElementById('wiz-phone').value.trim(),
-        email: document.getElementById('wiz-email').value.trim(),
-      },
-    };
-  }
-  return {};
-}
-
-function saveWizardStep(stepData, isLastStep) {
-  var updates = Object.assign({}, stepData);
-  if (isLastStep) { updates.onboarding_complete = true; }
-  return fetch('/api/businesses/' + wizardBizKey + '/profile', {
-    method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify(updates),
-  }).then(function(r) { return r.json(); });
-}
-
-function initWizard() {
-  var nextBtn = document.getElementById('wiz-next');
-  if (nextBtn) {
-    nextBtn.addEventListener('click', function() {
-      var data = wizardCollectStep(wizardStep);
-      if (!data) { return; }
-      var isLast = wizardStep === wizardTotalSteps;
-      saveWizardStep(data, isLast).then(function(resp) {
-        if (!resp.ok) { document.getElementById('wiz-error').textContent = 'Save failed.'; return; }
-        if (isLast) {
-          closeOnboardingWizard();
-          fetchStatus();
-          showToast('Business profile saved!', 'success');
-        } else {
-          wizardStep++;
-          updateWizardView();
-        }
-      }).catch(function() {
-        document.getElementById('wiz-error').textContent = 'Network error – please retry.';
-      });
-    });
-  }
-
-  var backBtn = document.getElementById('wiz-back');
-  if (backBtn) {
-    backBtn.addEventListener('click', function() {
-      if (wizardStep > 1) { wizardStep--; updateWizardView(); }
-    });
-  }
-
-  var skipBtn = document.getElementById('wiz-skip');
-  if (skipBtn) {
-    skipBtn.addEventListener('click', function() {
-      if (wizardStep === wizardTotalSteps) {
-        saveWizardStep({ onboarding_complete: true }, true).then(function() {
-          closeOnboardingWizard();
-          fetchStatus();
-        }).catch(function(err) {
-          console.error('Skip save failed:', err);
-        });
-      } else {
-        wizardStep++;
-        updateWizardView();
-      }
-    });
-  }
-
-  var addOwnerBtn = document.getElementById('wiz-add-owner');
-  if (addOwnerBtn) {
-    addOwnerBtn.addEventListener('click', function() {
-      var list = document.getElementById('wiz-owners-list');
-      var row = document.createElement('div');
-      row.className = 'wiz-owner-row';
-      row.style.display = 'flex';
-      row.style.gap = '8px';
-      row.style.marginBottom = '8px';
-      row.innerHTML =
-        '<input class="modal-input wiz-owner-name" type="text" placeholder="Full name" style="flex:2;margin:0"/>' +
-        '<input class="modal-input wiz-owner-pct" type="number" placeholder="%" style="flex:1;margin:0" min="0" max="100"/>' +
-        '<input class="modal-input wiz-owner-role" type="text" placeholder="Role" style="flex:1.5;margin:0" value="Managing Member"/>' +
-        '<button onclick="this.parentElement.remove()" style="background:none;border:none;color:#f87171;cursor:pointer;font-size:1.2rem">×</button>';
-      list.appendChild(row);
-    });
-  }
-}
-
-/* ----------------------------------------------------------
-   Business Profile tab
-   ---------------------------------------------------------- */
-function fetchProfileTab() {
-  fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
-    var bizKey = s.active_business_key;
-    return fetch('/api/businesses/' + bizKey + '/profile');
-  }).then(function(r) { return r.json(); }).then(function(d) {
-    if (!d.ok) { return; }
-    var p = d.profile;
-    var set = function(id, val) { var el = document.getElementById(id); if (el && val !== undefined && val !== null) { el.value = val; } };
-    set('prof-name', p.business_name);
-    set('prof-legal-structure', p.legal_structure);
-    set('prof-ein', p.federal_ein);
-    set('prof-state', p.state);
-    set('prof-industry', p.industry);
-    set('prof-business-model', p.business_model);
-    set('prof-accounting-basis', p.accounting_basis);
-    set('prof-fiscal-year', p.fiscal_year_start);
-    set('prof-inventory-method', p.inventory_method);
-    set('prof-currency', p.default_books_currency);
-    if (p.address) {
-      set('prof-street', p.address.street);
-      set('prof-city', p.address.city);
-      set('prof-zip', p.address.zip);
+  // Cmd+Enter shortcut
+  messageInput.addEventListener('keydown', function (e) {
+    if ((e.metaKey || e.ctrlKey) && e.key === 'Enter') {
+      chatForm.requestSubmit();
     }
-    if (p.contact) {
-      set('prof-phone', p.contact.phone);
-      set('prof-email', p.contact.email);
-    }
-  }).catch(function(err) { console.error('fetchProfileTab error:', err); });
-}
+  });
 
-function initProfileTab() {
-  var saveBtn = document.getElementById('prof-save-btn');
-  if (saveBtn) {
-    saveBtn.addEventListener('click', function() {
-      fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
-        var bizKey = s.active_business_key;
-        var payload = {
-          business_name: document.getElementById('prof-name').value.trim(),
-          legal_structure: document.getElementById('prof-legal-structure').value,
-          federal_ein: document.getElementById('prof-ein').value.trim(),
-          state: document.getElementById('prof-state').value.trim(),
-          industry: document.getElementById('prof-industry').value,
-          business_model: document.getElementById('prof-business-model').value,
-          accounting_basis: document.getElementById('prof-accounting-basis').value,
-          fiscal_year_start: document.getElementById('prof-fiscal-year').value.trim(),
-          inventory_method: document.getElementById('prof-inventory-method').value,
-          default_books_currency: document.getElementById('prof-currency').value.trim(),
-          address: {
-            street: document.getElementById('prof-street').value.trim(),
-            city: document.getElementById('prof-city').value.trim(),
-            zip: document.getElementById('prof-zip').value.trim(),
-            state: document.getElementById('prof-state').value.trim(),
-            country: 'US',
-          },
-          contact: {
-            phone: document.getElementById('prof-phone').value.trim(),
-            email: document.getElementById('prof-email').value.trim(),
-          },
-        };
-        fetch('/api/businesses/' + bizKey + '/profile', {
-          method: 'PUT',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(payload),
-        }).then(function(r) { return r.json(); }).then(function(d) {
-          var msg = document.getElementById('prof-save-msg');
-          if (msg) {
-            msg.style.color = d.ok ? '#10b981' : '#f87171';
-            msg.textContent = d.ok ? 'Saved.' : (d.detail || 'Error saving profile.');
-          }
-          if (d.ok) { fetchStatus(); }
-        }).catch(function() {
-          var msg = document.getElementById('prof-save-msg');
-          if (msg) { msg.style.color = '#f87171'; msg.textContent = 'Network error.'; }
-        });
-      }).catch(function() {
-        var msg = document.getElementById('prof-save-msg');
-        if (msg) { msg.style.color = '#f87171'; msg.textContent = 'Network error.'; }
-      });
+  // AI panel toggle
+  if (aiPanelToggle) {
+    aiPanelToggle.addEventListener('click', function () {
+      var panel = document.getElementById('ai-panel');
+      var isOpen = panel.style.width !== '0';
+      panel.style.width = isOpen ? '0' : '';
+      aiPanelToggle.textContent = isOpen ? 'AI ⟩' : '⟨ AI';
     });
   }
 
-  var reopenBtn = document.getElementById('prof-reopen-wizard-btn');
-  if (reopenBtn) {
-    reopenBtn.addEventListener('click', function() {
-      fetch('/api/status').then(function(r) { return r.json(); }).then(function(s) {
-        onboardingWizardShown = false;
-        openOnboardingWizard(s.active_business_key, s.active_business);
-      }).catch(function(err) { console.error('reopen wizard error:', err); });
-    });
-  }
+  // Clear chat
+  if (aiClearChat) {
+    aiClearChat.addEventListener('click', function () {
+      fetch('/api/clear-conversation', { method: 'POST' })
+        .then(function (r) {
+          if (!r.ok) { throw new Error('Server error ' + r.status); }
+          var chatLog = document.getElementById('ai-chat-log');
+          if (chatLog) { chatLog.textContent = ''; }
+          showToast('Conversation cleared', 'success');
+        })
+        .catch(function (err) { showToast('Clear failed: ' + err.message, 'error'); });
+  });
 }
 
-/* ----------------------------------------------------------
-   DOMContentLoaded — wire everything up
-   ---------------------------------------------------------- */
+  // Theme toggle
+  var themeToggle = document.getElementById('theme-toggle');
+  if (themeToggle) {
+    themeToggle.addEventListener('click', function () {
+      var theme = document.documentElement.getAttribute('data-theme');
+      var next = theme === 'light' ? 'dark' : 'light';
+      if (next === 'light') {
+        document.documentElement.setAttribute('data-theme', 'light');
+        themeToggle.textContent = '☀';
+      } else {
+        document.documentElement.removeAttribute('data-theme');
+        themeToggle.textContent = '☽';
+      }
+      try { localStorage.setItem('cpa-theme', next); } catch (e) {}
+    });
+  }
 
-document.addEventListener('DOMContentLoaded', function () {
-  /* Grab DOM references */
-  chatLog              = document.getElementById('ai-chat-log');
-  chatForm             = document.getElementById('ai-chat-form');
-  messageInput         = document.getElementById('ai-message-input');
-  businessSelect       = document.getElementById('business-select');
-  providerSelect       = document.getElementById('provider-select');
-  modelModeSelect      = document.getElementById('model-mode-select');
-  bootWarning          = document.getElementById('boot-warning');
-  modelBadge           = document.getElementById('model-badge');
-  learnedCount         = document.getElementById('learned-count');
-  sheetLink            = document.getElementById('sheet-link');
-  docLink              = document.getElementById('doc-link');
-  metricTransactions   = document.getElementById('metric-transactions');
-  metricIncome         = document.getElementById('metric-income');
-  metricExpenses       = document.getElementById('metric-expenses');
-  metricNet            = document.getElementById('metric-net');
-  metricFlagged        = document.getElementById('metric-flagged');
-  recentTransactionsEl = document.getElementById('recent-transactions');
-  recentAuditsEl       = document.getElementById('recent-audits');
-  ledgerBody           = document.getElementById('ledger-body');
-  ledgerPageInfo       = document.getElementById('ledger-page-info');
-  ledgerPrev           = document.getElementById('ledger-prev');
-  ledgerNext           = document.getElementById('ledger-next');
-  ledgerSearch         = document.getElementById('ledger-search');
-  ledgerFrom           = document.getElementById('ledger-from');
-  ledgerTo             = document.getElementById('ledger-to');
-  txDate               = document.getElementById('tx-date');
-  txType               = document.getElementById('tx-type');
-  txDescription        = document.getElementById('tx-description');
-  txCategory           = document.getElementById('tx-category');
-  txAmount             = document.getElementById('tx-amount');
-  txReference          = document.getElementById('tx-reference');
-  txNotes              = document.getElementById('tx-notes');
-  reportFrom           = document.getElementById('report-from');
-  reportTo             = document.getElementById('report-to');
-  incomeBody           = document.getElementById('income-body');
-  expenseBody          = document.getElementById('expense-body');
-  incomeTotalCell      = document.getElementById('income-total-cell');
-  expenseTotalCell     = document.getElementById('expense-total-cell');
-  netProfitValue       = document.getElementById('net-profit-value');
-  netProfitRow         = document.getElementById('net-profit-row');
-  reportOutput         = document.getElementById('report-output');
-  balanceSheetOutput   = document.getElementById('balance-sheet-output');
-  cashFlowOutput       = document.getElementById('cash-flow-output');
-  budgetMonthInput     = document.getElementById('budget-month');
-  budgetGenerateBtn    = document.getElementById('budget-generate-btn');
-  budgetOutput         = document.getElementById('budget-output');
-  budgetBody           = document.getElementById('budget-body');
-  budgetAlerts         = document.getElementById('budget-alerts');
-  arApBody             = document.getElementById('ar-ap-body');
-  reconcileBody        = document.getElementById('reconcile-body');
-  taxOutput            = document.getElementById('tax-output');
-  netProfitValue       = document.getElementById('net-profit-value');
-  netProfitRow         = document.getElementById('net-profit-row');
-  documentDrafts       = document.getElementById('document-drafts');
-  voiceButton          = document.getElementById('ai-voice-btn');
-  voiceStatus          = document.getElementById('ai-voice-status');
-  speakToggle          = document.getElementById('ai-speak-toggle');
-
-  /* Set default date for transaction form */
-  if (txDate) { txDate.value = new Date().toISOString().slice(0, 10); }
-
-  /* Init all subsystems */
-  initThemeToggle();
-  initAiPanel();
-  initTabs();
+  // Settings
   initSettings();
-  initProviderSwitch();
-  initModeSwitch();
-  initBusinessSwitch();
-  initLedger();
-  initTransactionForm();
-  initReports();
-  initBudget();
-  initDocuments();
-  initChat();
-  initReconcile();
-  initArAp();
-  initTax();
-  configureVoice();
-  initAuth();
-  initUsers();
-  initWizard();
-  initProfileTab();
 
-  /* Initial data load */
+  // Business switch
+  initBusinessSwitch();
+
+  // Provider switch
+  initProviderSwitch();
+
+  // Mode switch
+  initModeSwitch();
+
+  // Mode selector
+  initModeSelector();
+
+  // Fetch initial status
   fetchStatus();
-  fetchRecurring();
-});
+}
+
+/* ----------------------------------------------------------
+   Utility: Escape HTML
+   ---------------------------------------------------------- */
+
+function escapeHtml(v) {
+  if (v === null || v === undefined) { return ''; }
+  var s = String(v);
+  return s
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;');
+}
+
+/* ----------------------------------------------------------
+   Utility: Render content with markdown
+   ---------------------------------------------------------- */
+
+function renderContent(text) {
+  if (!text) { return ''; }
+
+  var html = '';
+  var lines = text.split('\n');
+  var currentPara = '';
+
+  lines.forEach(function (line) {
+    var trimmed = line.trim();
+    if (!trimmed) { return; }
+
+    if (/^[\-\*] /.test(trimmed)) {
+      if (currentPara) {
+        html += '<p>' + escapeHtml(currentPara) + '</p>';
+        currentPara = '';
+      }
+      html += '<ul><li>' + escapeHtml(trimmed.replace(/^[\-\*] /, '')) + '</li></ul>';
+    } else {
+      currentPara += '\n' + trimmed;
+    }
+  });
+
+  if (currentPara) {
+    html += '<p>' + escapeHtml(currentPara) + '</p>';
+  }
+
+  return html;
+}
+
+/* ----------------------------------------------------------
+   DOMContentLoaded
+   ---------------------------------------------------------- */
+
+document.addEventListener('DOMContentLoaded', init);

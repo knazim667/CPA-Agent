@@ -703,6 +703,294 @@
           ]
         ]
       }
+    },
+    {
+      "timestamp": 1777992721.1541271,
+      "business": "nazam_llc",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "May 5, 2026",
+          "Figma subscription",
+          "Software Subscription Expense",
+          21.25,
+          "Expense",
+          "",
+          ""
+        ],
+        [
+          "May 5, 2026",
+          "Capital contribution",
+          "Owner's Capital",
+          500,
+          "Capital",
+          "",
+          ""
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1sEJBLOokzNdo8u-_DtP-JwDVouZH880g0rRUoqTyNMg",
+        "updatedRange": "Ledger!A6:G7",
+        "updatedRows": 2,
+        "updatedColumns": 7,
+        "updatedCells": 14
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A6:G7",
+        "values": [
+          [
+            "05/05/2026",
+            "Figma subscription",
+            "Software Subscription Expense",
+            "$21.25",
+            "Expense"
+          ],
+          [
+            "05/05/2026",
+            "Capital contribution",
+            "Owner's Capital",
+            "$500.00",
+            "Capital"
+          ]
+        ]
+      }
+    },
+    {
+      "timestamp": 1778186507.6690838,
+      "business": "nazam_llc",
+      "mode": "bulk_update",
+      "requested_payload": [
+        [
+          "04/23/2026",
+          "LLC corporate filing fee",
+          "Taxes & Licenses",
+          "$143.00",
+          "Expense",
+          "State filing",
+          "Deductible on Schedule C line 23"
+        ],
+        [
+          "04/23/2026",
+          "Payment for corporate filing",
+          "Checking Account",
+          "-$143.00",
+          "Expense",
+          "State filing",
+          "Credit to Checking for expense payment"
+        ],
+        [
+          "04/23/2026",
+          "Hostinger website hosting",
+          "Software & Subscriptions",
+          "$95.78",
+          "Expense",
+          "",
+          "Annual hosting fee"
+        ],
+        [
+          "04/23/2026",
+          "Payment for Hostinger hosting",
+          "Checking Account",
+          "-$95.78",
+          "Expense",
+          "",
+          "Credit to Checking for expense payment"
+        ],
+        [
+          "04/30/2026",
+          "ChatGPT Codex subscription",
+          "Software & Subscriptions",
+          "$21.25",
+          "Expense",
+          "Recurring",
+          "Recurring SaaS expense"
+        ],
+        [
+          "04/30/2026",
+          "Payment for ChatGPT subscription",
+          "Checking Account",
+          "-$21.25",
+          "Expense",
+          "Recurring",
+          "Credit to Checking for expense payment"
+        ],
+        [
+          "05/01/2026",
+          "Zoom phone services",
+          "Utilities",
+          "$20.70",
+          "Expense",
+          "Recurring",
+          "Recurring VoIP expense (COA 7200)"
+        ],
+        [
+          "05/01/2026",
+          "Payment for Zoom services",
+          "Checking Account",
+          "-$20.70",
+          "Expense",
+          "Recurring",
+          "Credit to Checking for expense payment"
+        ],
+        [
+          "05/05/2026",
+          "Figma subscription",
+          "Software & Subscriptions",
+          "$21.25",
+          "Expense",
+          "Monthly",
+          "SaaS expense (COA 7000)"
+        ],
+        [
+          "05/05/2026",
+          "Payment for Figma subscription",
+          "Checking Account",
+          "-$21.25",
+          "Expense",
+          "Monthly",
+          "Credit to Checking for expense payment"
+        ],
+        [
+          "05/05/2026",
+          "Owner capital contribution",
+          "Owner's Capital",
+          "$500.00",
+          "Equity",
+          "Owner investment",
+          "Equity contribution, not taxable income. Confirm single-member LLC status; use Members' Capital if multi-member."
+        ],
+        [
+          "05/05/2026",
+          "Cash receipt for capital contribution",
+          "Checking Account",
+          "$500.00",
+          "Equity",
+          "Owner investment",
+          "Debit to Checking for equity contribution"
+        ]
+      ],
+      "result": {
+        "spreadsheetId": "1sEJBLOokzNdo8u-_DtP-JwDVouZH880g0rRUoqTyNMg",
+        "updatedRange": "Ledger!A8:G19",
+        "updatedRows": 12,
+        "updatedColumns": 7,
+        "updatedCells": 84
+      },
+      "verification": {
+        "verified": true,
+        "range_name": "Ledger!A8:G19",
+        "values": [
+          [
+            "04/23/2026",
+            "LLC corporate filing fee",
+            "Taxes & Licenses",
+            "$143.00",
+            "Expense",
+            "State filing",
+            "Deductible on Schedule C line 23"
+          ],
+          [
+            "04/23/2026",
+            "Payment for corporate filing",
+            "Checking Account",
+            "-$143.00",
+            "Expense",
+            "State filing",
+            "Credit to Checking for expense payment"
+          ],
+          [
+            "04/23/2026",
+            "Hostinger website hosting",
+            "Software & Subscriptions",
+            "$95.78",
+            "Expense",
+            "",
+            "Annual hosting fee"
+          ],
+          [
+            "04/23/2026",
+            "Payment for Hostinger hosting",
+            "Checking Account",
+            "-$95.78",
+            "Expense",
+            "",
+            "Credit to Checking for expense payment"
+          ],
+          [
+            "04/30/2026",
+            "ChatGPT Codex subscription",
+            "Software & Subscriptions",
+            "$21.25",
+            "Expense",
+            "Recurring",
+            "Recurring SaaS expense"
+          ],
+          [
+            "04/30/2026",
+            "Payment for ChatGPT subscription",
+            "Checking Account",
+            "-$21.25",
+            "Expense",
+            "Recurring",
+            "Credit to Checking for expense payment"
+          ],
+          [
+            "05/01/2026",
+            "Zoom phone services",
+            "Utilities",
+            "$20.70",
+            "Expense",
+            "Recurring",
+            "Recurring VoIP expense (COA 7200)"
+          ],
+          [
+            "05/01/2026",
+            "Payment for Zoom services",
+            "Checking Account",
+            "-$20.70",
+            "Expense",
+            "Recurring",
+            "Credit to Checking for expense payment"
+          ],
+          [
+            "05/05/2026",
+            "Figma subscription",
+            "Software & Subscriptions",
+            "$21.25",
+            "Expense",
+            "Monthly",
+            "SaaS expense (COA 7000)"
+          ],
+          [
+            "05/05/2026",
+            "Payment for Figma subscription",
+            "Checking Account",
+            "-$21.25",
+            "Expense",
+            "Monthly",
+            "Credit to Checking for expense payment"
+          ],
+          [
+            "05/05/2026",
+            "Owner capital contribution",
+            "Owner's Capital",
+            "$500.00",
+            "Equity",
+            "Owner investment",
+            "Equity contribution, not taxable income. Confirm single-member LLC status; use Members' Capital if multi-member."
+          ],
+          [
+            "05/05/2026",
+            "Cash receipt for capital contribution",
+            "Checking Account",
+            "$500.00",
+            "Equity",
+            "Owner investment",
+            "Debit to Checking for equity contribution"
+          ]
+        ]
+      }
     }
   ]
 }

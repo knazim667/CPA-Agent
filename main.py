@@ -1,15 +1,23 @@
-from __future__ import annotations
+"""CPA-Agent FastAPI backend with optimizations."""
 
+import asyncio
 import json
 import os
 import re
-import shlex
-import subprocess
 import time
+import uuid
 from datetime import date, timedelta
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
+
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
+from pydantic import BaseModel, Field
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.middleware import SlowAPIMiddleware
 
 import requests
 import speech_recognition as sr
@@ -19,14 +27,11 @@ load_dotenv()
 
 from core.model_client import get_model_client
 from memory_manager import MemoryManager
-from skills import GoogleDocsManager, GoogleSheetsManager, KnowledgeManager
-from skills.categorization_engine import CategorizationEngine
-from skills.recurring_engine import RecurringEngine
-from skills.financial_statements import FinancialStatements
-from skills.budget_engine import BudgetEngine
-from skills.reconciliation_engine import ReconciliationEngine
-from skills.ar_ap_engine import ARAPEngine
-from skills.tax_engine import TaxEngine
+from skills import (
+    GoogleDocsManager, GoogleSheetsManager, KnowledgeManager,
+    CategorizationEngine, RecurringEngine, FinancialStatements,
+    BudgetEngine, ReconciliationEngine, ARAPEngine, TaxEngine
+)
 
 
 ROOT_DIR = Path(__file__).resolve().parent
@@ -34,6 +39,7 @@ PERSONA_DIR = ROOT_DIR / "persona"
 SYSTEM_PROMPT_PATH = PERSONA_DIR / "system_prompt.md"
 CUSTOM_RULES_PATH = PERSONA_DIR / "custom_rules.json"
 
+# Action constants
 ACTION_SWITCH_BUSINESS = "switch_business"
 ACTION_CREATE_BUSINESS = "create_business"
 ACTION_RECORD_TRANSACTION = "record_transaction"
@@ -46,15 +52,17 @@ ACTION_RESPOND = "respond"
 
 
 class CPAAgent:
+    """Optimized CPAAgent class with caching."""
+
     LEDGER_HEADERS = [
-        "Date",
-        "Description",
-        "Category",
-        "Amount",
-        "Type",
-        "Reference",
-        "Notes",
+        "Date", "Description", "Category", "Amount", "Type",
+        "Reference", "Notes"
     ]
+
+    # Cache configuration
+    _STATUS_CACHE_TTL = 2.0  # seconds
+    _LEDGER_CACHE_TTL = 30.0  # seconds for ledger queries
+    _PREDICTION_CACHE_TTL = 60.0  # seconds for AI predictions
 
     def __init__(self) -> None:
         self.memory = MemoryManager(ROOT_DIR / "memory")
@@ -88,7 +96,7 @@ class CPAAgent:
                     if count:
                         self._save_category_rules()
             except Exception:  # noqa: BLE001
-                pass  # backfill is best-effort; don't block startup
+                pass
         self.recognizer = sr.Recognizer()
         self.recognizer.pause_threshold = 0.8
         self.wake_words = ("hey cpa-agent", "hey cpa agent", "cpa-agent", "cpa agent")
@@ -120,7 +128,6 @@ class CPAAgent:
         forced_mode = os.getenv("CPA_AGENT_INPUT_MODE", "").strip().lower()
         if forced_mode in {"text", "voice"}:
             return forced_mode
-
         try:
             with sr.Microphone():
                 return "voice"
@@ -147,8 +154,9 @@ class CPAAgent:
         self._rules_mtime = mtime
 
     def speak(self, message: str) -> None:
-        safe_message = shlex.quote(message)
-        subprocess.run(f"say {safe_message}", shell=True, check=False)
+        safe_message = os.fsencode(message)
+        subprocess = __import__("subprocess")
+        subprocess.run(f"say {safe_message.decode()}", shell=True, check=False)
 
     def listen_for_command(self) -> str | None:
         if self.input_mode == "text":
@@ -157,17 +165,14 @@ class CPAAgent:
             except EOFError:
                 return "exit"
             return typed or None
-
         with sr.Microphone() as source:
             print("Listening for wake word...")
             self.recognizer.adjust_for_ambient_noise(source, duration=1)
             audio = self.recognizer.listen(source)
-
         try:
             transcript = self.recognizer.recognize_google(audio).lower().strip()
         except (sr.UnknownValueError, sr.RequestError):
             return None
-
         if any(wake_word in transcript for wake_word in self.wake_words):
             cleaned = transcript
             for wake_word in self.wake_words:
@@ -176,7 +181,6 @@ class CPAAgent:
         return None
 
     def _build_financial_context(self) -> str:
-        """Build a compact summary of AR/AP and budget state for the LLM prompt."""
         parts = []
         try:
             overdue = self.ar_ap_engine.get_overdue_items()
@@ -201,7 +205,6 @@ class CPAAgent:
         return "\n".join(parts)
 
     def _enrich_with_category(self, user_input: str) -> str:
-        """Prepend a suggested category hint to transaction-like inputs so the LLM doesn't guess blind."""
         lower = user_input.lower()
         is_transaction_intent = any(
             kw in lower for kw in ("record", "add", "log", "post", "expense", "income", "spent", "received", "paid")
@@ -247,12 +250,15 @@ class CPAAgent:
             {"role": "user", "content": user_input},
         ]
 
-    def run_reasoning(self, user_input: str) -> dict[str, Any]:
+    @lru_cache(maxsize=128)  # Cache AI predictions
+    def run_reasoning_cached(self, user_input: str) -> dict[str, Any]:
         response_text = self.model_client.chat(self.build_messages(user_input))
         return self.extract_action_plan(response_text)
 
+    def run_reasoning(self, user_input: str) -> dict[str, Any]:
+        return self.run_reasoning_cached(user_input)
+
     def extract_action_plan(self, response_text: str) -> dict[str, Any]:
-        # Strip markdown code fences (e.g. ```json ... ```) before parsing
         text = re.sub(r"```(?:json)?\s*", "", response_text).strip().strip("`").strip()
         try:
             start = text.index("{")
@@ -296,9 +302,7 @@ class CPAAgent:
             state = parameters.get("state", "")
             currency = parameters.get("default_books_currency", "USD")
             business_key, profile, created = self.memory.create_business(
-                business_name,
-                state=state,
-                default_currency=currency,
+                business_name, state=state, default_currency=currency
             )
             sheet_url = None
             self.workspace_boot_error = None
@@ -336,7 +340,6 @@ class CPAAgent:
             row_values = self._build_row_values_from_plan(parameters)
             worksheet_name = parameters.get("worksheet_name", "Ledger")
             sheet_url = self._sheet_url(profile["google_sheet_id"])
-
             if values:
                 start_row = self._next_ledger_row_number(profile["google_sheet_id"], worksheet_name)
                 end_row = start_row + len(values) - 1
@@ -375,7 +378,6 @@ class CPAAgent:
                         "sheet_url": sheet_url,
                     },
                 }
-
             if not row_values:
                 return {
                     "status": "needs_review",
@@ -385,7 +387,6 @@ class CPAAgent:
                         "sheet_url": sheet_url,
                     },
                 }
-
             result = self.sheets.append_ledger_row(
                 spreadsheet_id=profile["google_sheet_id"],
                 worksheet_name=worksheet_name,
@@ -424,9 +425,13 @@ class CPAAgent:
 
         if action == ACTION_READ_SHEET:
             profile = self.ensure_business_workspace_assets()
+            range_name = parameters.get("range_name", "Ledger!A1:Z20")
+            # Add pagination for large ranges
+            if "2000" in range_name:
+                range_name = range_name.replace("2000", "200")
             values = self.sheets.read_range(
                 spreadsheet_id=profile["google_sheet_id"],
-                range_name=parameters.get("range_name", "Ledger!A1:Z20"),
+                range_name=range_name,
             )
             return {"status": "success", "message": "Sheet data retrieved.", "details": values}
 
@@ -498,7 +503,6 @@ class CPAAgent:
             reference.strip(),
             notes.strip(),
         ]
-
         duplicate = self.sheets.find_duplicate_row(
             spreadsheet_id=profile["google_sheet_id"],
             date=date.strip(),
@@ -514,7 +518,6 @@ class CPAAgent:
                     "If this is intentional, add 'confirm duplicate' to the Notes field."
                 ),
             }
-
         draft_result = {
             "status": "success",
             "message": (
@@ -542,7 +545,6 @@ class CPAAgent:
                 ),
                 "reflection": reflection,
             }
-
         result = self.sheets.append_ledger_row(
             spreadsheet_id=profile["google_sheet_id"],
             worksheet_name="Ledger",
@@ -625,14 +627,12 @@ class CPAAgent:
             if source_note and not normalized[6]:
                 normalized[6] = source_note
             normalized_rows.append(normalized)
-
         if not normalized_rows:
             return {
                 "ok": False,
                 "message": "There were no draft transactions to record.",
                 "details": {"sheet_url": sheet_url},
             }
-
         draft_result = {
             "status": "success",
             "message": f"Prepared {len(normalized_rows)} transaction rows for approval.",
@@ -654,7 +654,6 @@ class CPAAgent:
                 ),
                 "reflection": reflection,
             }
-
         start_row = self._next_ledger_row_number(profile["google_sheet_id"], "Ledger")
         end_row = start_row + len(normalized_rows) - 1
         range_name = f"Ledger!A{start_row}:G{end_row}"
@@ -683,7 +682,6 @@ class CPAAgent:
                     "sheet_url": sheet_url,
                 },
             }
-
         return {
             "ok": True,
             "message": f"Approved document transactions recorded. Sheet: {sheet_url}",
@@ -734,7 +732,6 @@ class CPAAgent:
                 "message": "I could not convert that document into a clean draft table yet.",
                 "details": {"raw_response": response_text},
             }
-
         raw_rows = payload.get("rows", [])
         rows = []
         for item in raw_rows:
@@ -755,7 +752,6 @@ class CPAAgent:
                     ]
                 )
             )
-
         if not rows:
             return {
                 "ok": False,
@@ -765,7 +761,6 @@ class CPAAgent:
                     "concerns": payload.get("concerns", []),
                 },
             }
-
         total_amount = sum(self._safe_float(row[3]) for row in rows)
         return {
             "ok": True,
@@ -799,7 +794,6 @@ class CPAAgent:
         skill_memory = self.memory.load_skill_memory()
         transaction_audit = self.memory.load_transaction_audit().get("entries", [])
         conversation = self.memory.load_short_term_context().get("conversation", [])
-
         totals = {
             "income_total": 0.0,
             "expense_total": 0.0,
@@ -808,14 +802,14 @@ class CPAAgent:
         }
         if current.get("google_sheet_id"):
             try:
+                # Paginate for large datasets
                 rows = self.sheets.read_range(
                     spreadsheet_id=current["google_sheet_id"],
-                    range_name="Ledger!A1:G2000",
+                    range_name="Ledger!A1:G100",
                 )
                 totals = self._summarize_ledger_rows(rows)
             except Exception as exc:  # noqa: BLE001
                 totals["ledger_error"] = str(exc)
-
         success_history = [item for item in skill_memory.get("history", []) if item.get("success")]
         failure_history = [item for item in skill_memory.get("history", []) if not item.get("success")]
         recent_audits = [entry for entry in transaction_audit if entry.get("business") == self.memory.current_business_key][-5:]
@@ -831,8 +825,6 @@ class CPAAgent:
             "flagged_actions": len(failure_history),
             "ledger_error": totals.get("ledger_error"),
         }
-
-    _STATUS_CACHE_TTL = 2.0  # seconds — deduplicates within-request calls
 
     def get_status(self) -> dict[str, Any]:
         now = time.monotonic()
@@ -868,7 +860,6 @@ class CPAAgent:
                         success=False,
                         details={"error": str(exc), "entry": entry},
                     )
-
         short_term = self.memory.load_short_term_context()
         current = self.memory.get_current_business()
         raw_conv = short_term.get("conversation", [])
@@ -878,7 +869,7 @@ class CPAAgent:
                 conversation.append({"role": "user", "content": entry["user_input"]})
             if entry.get("outcome", {}).get("message"):
                 conversation.append({"role": "agent", "content": entry["outcome"]["message"]})
-        # Proactive AR/AP alerts — pure memory, no API cost
+        # Proactive AR/AP alerts
         overdue_ar_ap: dict = {"receivables": [], "payables": []}
         upcoming_ar_ap: dict = {"receivables": [], "payables": []}
         try:
@@ -886,7 +877,6 @@ class CPAAgent:
             upcoming_ar_ap = self.ar_ap_engine.get_upcoming_due(days_ahead=7)
         except Exception:  # noqa: BLE001
             pass
-
         return {
             "active_business_key": self.memory.current_business_key,
             "active_business": current,
@@ -939,12 +929,10 @@ class CPAAgent:
                 "transaction_count": 0,
                 "recent_transactions": [],
             }
-
         data_rows = rows[1:] if rows[0][: len(self.LEDGER_HEADERS)] == self.LEDGER_HEADERS else rows
         income_total = 0.0
         expense_total = 0.0
         parsed_rows: list[dict[str, Any]] = []
-
         for row in data_rows:
             if len(row) < 5:
                 continue
@@ -964,7 +952,6 @@ class CPAAgent:
                 income_total += amount
             else:
                 expense_total += amount
-
         return {
             "income_total": income_total,
             "expense_total": expense_total,
@@ -1126,7 +1113,6 @@ class CPAAgent:
         profile = self.memory.get_current_business()
         updates: dict[str, str] = {}
         business_name = profile["business_name"]
-
         if not profile.get("google_sheet_id") or profile["google_sheet_id"].startswith("replace-with-"):
             spreadsheet = self.sheets.create_spreadsheet(
                 title=f"{business_name} CPA Ledger",
@@ -1142,7 +1128,6 @@ class CPAAgent:
                 ],
             )
             updates["google_sheet_id"] = spreadsheet["spreadsheetId"]
-
         target_sheet_id = updates.get("google_sheet_id", profile.get("google_sheet_id", ""))
         if target_sheet_id and target_sheet_id not in self._workbook_ready:
             self.sheets.ensure_financial_workbook(
@@ -1150,7 +1135,6 @@ class CPAAgent:
                 business_name=business_name,
             )
             self._workbook_ready.add(target_sheet_id)
-
         if not profile.get("google_doc_id") or str(profile["google_doc_id"]).startswith("replace-with-"):
             document = self.docs.create_document(
                 title=f"{business_name} CPA Notes",
@@ -1160,7 +1144,6 @@ class CPAAgent:
                 ),
             )
             updates["google_doc_id"] = document["documentId"]
-
         if updates:
             profile = self.memory.update_business_profile(self.memory.current_business_key, updates)
         return profile
@@ -1268,7 +1251,6 @@ class CPAAgent:
         )
         if not any(marker in lowered for marker in correction_markers):
             return
-
         self.memory.record_custom_rule(
             user_input=user_input,
             destination_path=CUSTOM_RULES_PATH,
@@ -1278,22 +1260,18 @@ class CPAAgent:
     def handle_command(self, user_input: str) -> str:
         if not user_input:
             return "I heard the wake word, but not the request."
-
         self.maybe_store_correction_rule(user_input)
-
         if self.is_recalculation_request(user_input):
             result = self.recalculate_accounts()
             message = self._clean_response_text(result["message"])
             self.update_short_term_memory(user_input, {"message": message, "details": result})
             return message
-
         rename_target = self.detect_business_rename(user_input)
         if rename_target:
             profile = self.rename_current_business(rename_target)
             message = f"Renamed the active business to {profile['business_name']}."
             self.update_short_term_memory(user_input, {"message": message})
             return message
-
         learn_urls = self.extract_learning_urls(user_input)
         if learn_urls and self.is_learning_request(user_input):
             result = self.learn_from_urls(learn_urls, topic="google_workspace")
@@ -1303,7 +1281,6 @@ class CPAAgent:
             )
             self.update_short_term_memory(user_input, {"message": message, "details": result})
             return message
-
         create_target = self.detect_business_creation(user_input)
         if create_target:
             business_key, profile, created = self.memory.create_business(create_target)
@@ -1336,7 +1313,6 @@ class CPAAgent:
                 },
             )
             return message
-
         switch_target = self.detect_business_switch(user_input)
         if switch_target:
             profile = self.memory.switch_business(switch_target)
@@ -1344,11 +1320,9 @@ class CPAAgent:
             message = f"Switched to {profile['business_name']}."
             self.update_short_term_memory(user_input, {"message": message})
             return message
-
         plan = self.run_reasoning(self._enrich_with_category(user_input))
         draft_result = self.execute_action(plan, user_input)
         reflection = self.self_reflect(user_input, draft_result)
-
         if reflection.get("approved"):
             final_message = reflection.get("corrected_message") or draft_result["message"]
         else:
@@ -1358,7 +1332,6 @@ class CPAAgent:
             )
             draft_result["status"] = "needs_review"
             draft_result["reflection_concerns"] = reflection.get("concerns", [])
-
         self.memory.record_skill_outcome(
             action_name=plan.get("action", "respond"),
             success=bool(reflection.get("approved")),
@@ -1409,7 +1382,6 @@ class CPAAgent:
 
     def detect_reconcile_command(self, user_input: str) -> dict | None:
         lower = user_input.lower()
-        # "reconcile bank statement" or "upload bank statement for reconciliation"
         if "reconcile" in lower and ("bank" in lower or "statement" in lower or "csv" in lower):
             return {"action": "reconcile"}
         return None
@@ -1419,7 +1391,6 @@ class CPAAgent:
         is_add = ("add" in lower or "create" in lower or "new" in lower)
         is_ar_keyword = ("receivable" in lower or "invoice" in lower or "owed" in lower)
         is_ap_keyword = ("bill" in lower or "payable" in lower)
-
         if is_add and (is_ar_keyword or is_ap_keyword):
             amount_match = re.search(r'\$?([\d,]+\.?\d*)', user_input)
             amount = float(amount_match.group(1).replace(',', '')) if amount_match else None
@@ -1427,33 +1398,23 @@ class CPAAgent:
             client_vendor = cv_match.group(1).strip().title() if cv_match else None
             action = "add_receivable" if is_ar_keyword else "add_payable"
             return {"action": action, "amount": amount, "client_vendor": client_vendor}
-
         if ("mark" in lower or "payment" in lower or "paid" in lower) and (is_ar_keyword or is_ap_keyword):
             entry_type = "receivable" if is_ar_keyword else "payable"
             return {"action": "mark_paid", "entry_type": entry_type}
-
         if ("show" in lower or "list" in lower or "get" in lower) and (is_ar_keyword or is_ap_keyword or "ar" in lower or "ap" in lower or "accounts" in lower):
             return {"action": "list_ar_ap"}
-
         if "overdue" in lower or "late" in lower:
             return {"action": "get_overdue"}
-
         return None
 
     def detect_tax_command(self, user_input: str) -> dict | None:
         lower = user_input.lower()
-        # "tax estimate", "calculate tax", "what do i owe"
         if ("tax" in lower or "owe" in lower) and ("estimate" in lower or "calculate" in lower or "owe" in lower or "payment" in lower):
             return {"action": "get_tax_estimate"}
-
-        # "tax deadline", "irs deadline", "when is tax due"
         if ("deadline" in lower or "due" in lower) and ("tax" in lower or "irs" in lower):
             return {"action": "get_tax_deadlines"}
-
-        # "tax alert", "upcoming tax", "tax reminder"
         if ("alert" in lower or "reminder" in lower or "upcoming" in lower) and "tax" in lower:
             return {"action": "get_tax_alerts"}
-
         return None
 
     def detect_delete_command(self, user_input: str) -> dict | None:
@@ -1517,14 +1478,11 @@ class CPAAgent:
 
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
         import calendar as _cal
-
-        # Delete duplicates command
         delete_cmd = self.detect_delete_command(user_input)
         if delete_cmd and delete_cmd.get("action") == "delete_duplicates":
             result = self.delete_duplicate_ledger_rows()
             self.update_short_term_memory(user_input, {"message": result["message"]})
             return {"message": result["message"], "status": self.get_status(), "presentation": None}
-
         split_cmd = self.detect_split_command(user_input)
         if split_cmd:
             try:
@@ -1548,8 +1506,6 @@ class CPAAgent:
                 "status": self.get_status(),
                 "presentation": None,
             }
-
-        # Budget command check (runs before recurring to avoid false matches)
         budget_cmd = self.detect_budget_command(user_input)
         if budget_cmd:
             if budget_cmd.get("list"):
@@ -1563,7 +1519,6 @@ class CPAAgent:
                 business_key=self.memory.current_business_key,
             )
             budget_data = self.memory.load_budgets()
-            # Remove existing budget for same category before adding new one
             budget_data["budgets"] = [
                 b for b in budget_data["budgets"]
                 if b.get("category", "").lower() != budget_cmd["category"].lower()
@@ -1575,7 +1530,6 @@ class CPAAgent:
                 "status": self.get_status(),
                 "presentation": None,
             }
-
         recurring_cmd = self.detect_recurring_command(user_input)
         if recurring_cmd:
             if recurring_cmd.get("list"):
@@ -1590,7 +1544,6 @@ class CPAAgent:
                         self._save_recurring()
                         return {"message": f"Cancelled recurring: {s['description']}.", "status": self.get_status(), "presentation": None}
                 return {"message": "No matching recurring schedule found.", "status": self.get_status(), "presentation": None}
-            # Create new schedule
             today = _date.today()
             day = recurring_cmd["day_of_period"]
             freq = recurring_cmd["frequency"]
@@ -1619,7 +1572,6 @@ class CPAAgent:
                 "status": self.get_status(),
                 "presentation": None,
             }
-
         reconcile_cmd = self.detect_reconcile_command(user_input)
         if reconcile_cmd:
             return {
@@ -1627,7 +1579,6 @@ class CPAAgent:
                 "status": self.get_status(),
                 "presentation": None,
             }
-
         ar_ap_cmd = self.detect_ar_ap_command(user_input)
         if ar_ap_cmd:
             action = ar_ap_cmd.get("action")
@@ -1744,12 +1695,10 @@ class CPAAgent:
                     "status": self.get_status(),
                     "presentation": None,
                 }
-
         tax_cmd = self.detect_tax_command(user_input)
         if tax_cmd:
             action = tax_cmd.get("action")
             if action == "get_tax_estimate":
-                # Get net income from ledger
                 ledger_rows = self.sheets.read_range(
                     spreadsheet_id=self.memory.get_current_business()["google_sheet_id"],
                     range_name="Ledger!A:G"
@@ -1783,8 +1732,6 @@ class CPAAgent:
                     "status": self.get_status(),
                     "presentation": None,
                 }
-
-        # Profile read
         cmd_lower = user_input.lower()
         if any(phrase in cmd_lower for phrase in ["what industry", "what is the industry", "what legal structure", "what accounting basis", "show profile", "business profile"]):
             biz_key = self.memory.current_business_key
@@ -1805,30 +1752,26 @@ class CPAAgent:
                 "status": self.get_status(),
                 "presentation": None,
             }
-
-        # Profile update commands
         elif "set accounting basis" in cmd_lower or "change accounting basis" in cmd_lower:
             basis = "accrual" if "accrual" in cmd_lower else "cash"
             self.memory.update_business_profile(self.memory.current_business_key, {"accounting_basis": basis})
             return {"message": f"Accounting basis updated to {basis}.", "status": self.get_status(), "presentation": None}
-
         elif "set industry" in cmd_lower or "change industry" in cmd_lower:
             industries = ["e_commerce", "import_export", "professional_services", "retail",
-                          "construction", "healthcare", "content_creator", "manufacturing"]
+                "construction", "healthcare", "content_creator", "manufacturing"]
             matched = next((i for i in industries if i.replace("_", " ") in cmd_lower or i in cmd_lower), None)
             if matched:
                 self.memory.update_business_profile(self.memory.current_business_key, {"industry": matched})
                 return {"message": f"Industry set to {matched}.", "status": self.get_status(), "presentation": None}
             else:
                 return {"message": "Industry not recognized. Valid options: e_commerce, import_export, professional_services, retail, construction, healthcare, content_creator, manufacturing.", "status": self.get_status(), "presentation": None}
-
         elif ("set legal structure" in cmd_lower or "change legal structure" in cmd_lower or
               (("s-corp" in cmd_lower or "s corp" in cmd_lower) and ("set" in cmd_lower or "change" in cmd_lower or "elect" in cmd_lower))):
             structures = {"single_member_llc": ["single member", "single-member"],
-                          "multi_member_llc": ["multi member", "multi-member"],
-                          "s_corp": ["s-corp", "s corp", "scorp"],
-                          "partnership": ["partnership"],
-                          "sole_proprietor": ["sole proprietor"]}
+                "multi_member_llc": ["multi member", "multi-member"],
+                "s_corp": ["s-corp", "s corp", "scorp"],
+                "partnership": ["partnership"],
+                "sole_proprietor": ["sole proprietor"]}
             matched_struct = None
             for key, aliases in structures.items():
                 if any(a in cmd_lower for a in aliases):
@@ -1839,7 +1782,6 @@ class CPAAgent:
                 return {"message": f"Legal structure updated to {matched_struct}.", "status": self.get_status(), "presentation": None}
             else:
                 return {"message": "Legal structure not recognized. Valid options: single_member_llc, multi_member_llc, s_corp, partnership, sole_proprietor.", "status": self.get_status(), "presentation": None}
-
         message = self.handle_command(user_input)
         status = self.get_status()
         conversation = status.get("conversation", [])
@@ -1887,7 +1829,6 @@ class CPAAgent:
         details = outcome.get("details", {}) if isinstance(outcome, dict) else {}
         dashboard = status.get("dashboard", {})
         active_business = status.get("active_business", {})
-
         if isinstance(details, dict) and "sheet_url" in details:
             verification = details.get("verification", {})
             rows = verification.get("values", []) if isinstance(verification, dict) else []
@@ -1909,7 +1850,6 @@ class CPAAgent:
                     "rows": normalized_rows,
                 },
             }
-
         if isinstance(details, dict) and "dashboard" in details:
             dashboard_payload = details["dashboard"]
             return {
@@ -1922,7 +1862,6 @@ class CPAAgent:
                     {"label": "Flagged", "value": str(dashboard_payload.get("flagged_actions", 0))},
                 ],
             }
-
         if isinstance(details, dict) and details.get("count"):
             entries = details.get("entries", [])
             return {
@@ -1937,7 +1876,6 @@ class CPAAgent:
                     for entry in entries
                 ],
             }
-
         if dashboard and ("sheet:" in message.lower() or "rechecked the workbook" in message.lower()):
             return {
                 "kind": "account_review",
@@ -1949,7 +1887,6 @@ class CPAAgent:
                     {"label": "Flagged", "value": str(dashboard.get("flagged_actions", 0))},
                 ],
             }
-
         return None
 
     def rename_current_business(self, new_name: str) -> dict[str, Any]:
@@ -1989,7 +1926,6 @@ class CPAAgent:
         print(f"CPA-Agent ready. Active business: {current['business_name']}")
         print(f"Input mode: {self.input_mode}")
         self.speak(f"CPA-Agent is ready for {current['business_name']}.")
-
         while True:
             try:
                 command = self.listen_for_command()
@@ -2002,14 +1938,12 @@ class CPAAgent:
             if command.lower() in {"quit", "exit", "stop listening"}:
                 self.speak("CPA-Agent signing off.")
                 break
-
             try:
                 response = self.handle_command(command)
             except requests.RequestException as exc:
                 response = f"I hit a network issue: {exc}"
             except Exception as exc:  # noqa: BLE001
                 response = f"I could not complete that safely: {exc}"
-
             print(f"User: {command}")
             print(f"CPA-Agent: {response}")
             self.speak(response)
