@@ -68,6 +68,7 @@ from core.command_detectors import (
     detect_delete_command as _detect_delete_command,
     detect_split_command as _detect_split_command,
 )
+from core.action_executor import execute_action as _execute_action
 from memory_manager import MemoryManager
 from skills import (
     GoogleDocsManager, GoogleSheetsManager, KnowledgeManager,
@@ -250,203 +251,15 @@ class CPAAgent:
         return _parse_json_response(text)
 
     def execute_action(self, plan: dict[str, Any], user_input: str) -> dict[str, Any]:
-        action = plan.get("action", ACTION_RESPOND)
-        parameters = plan.get("parameters", {})
-
-        if action == ACTION_SWITCH_BUSINESS:
-            business_name = parameters.get("business_name") or self.detect_business_switch(user_input)
-            if not business_name:
-                raise ValueError("Business switch requested without a business name.")
-            new_profile = self.memory.switch_business(business_name)
-            return {
-                "status": "success",
-                "message": f"Switched to {new_profile['business_name']}.",
-                "details": new_profile,
-            }
-
-        if action == ACTION_CREATE_BUSINESS:
-            business_name = parameters.get("business_name") or self.detect_business_creation(user_input)
-            if not business_name:
-                raise ValueError("Business creation requested without a business name.")
-            state = parameters.get("state", "")
-            currency = parameters.get("default_books_currency", "USD")
-            business_key, profile, created = self.memory.create_business(
-                business_name, state=state, default_currency=currency
-            )
-            sheet_url = None
-            self.workspace_boot_error = None
-            try:
-                profile = self.ensure_business_workspace_assets()
-                sheet_url = self._sheet_url(profile["google_sheet_id"])
-            except Exception as exc:  # noqa: BLE001
-                self.workspace_boot_error = str(exc)
-            status = "success" if created else "noop"
-            prefix = "Created" if created else "Switched to existing"
-            message = f"{prefix} business {profile['business_name']}."
-            if sheet_url:
-                message = f"{message} Sheet: {sheet_url}"
-            elif self.workspace_boot_error:
-                message = f"{message} Local silo is ready, but Google workspace setup still needs attention."
-            return {
-                "status": status,
-                "message": message,
-                "details": {
-                    "business_key": business_key,
-                    "created": created,
-                    "profile": profile,
-                    "sheet_url": sheet_url,
-                    "workspace_boot_error": self.workspace_boot_error,
-                },
-            }
-
-        if action == ACTION_RECORD_TRANSACTION:
-            profile = self.ensure_business_workspace_assets()
-            values = self._normalize_bulk_values(parameters.get("values"))
-            if not values:
-                inferred_values = self._infer_bulk_values_from_user_input(user_input, parameters)
-                if inferred_values:
-                    values = inferred_values
-            row_values = self._build_row_values_from_plan(parameters)
-            worksheet_name = parameters.get("worksheet_name", "Ledger")
-            sheet_url = self._sheet_url(profile["google_sheet_id"])
-            if values:
-                start_row = self._next_ledger_row_number(profile["google_sheet_id"], worksheet_name)
-                end_row = start_row + len(values) - 1
-                range_name = parameters.get("range") or f"{worksheet_name}!A{start_row}:G{end_row}"
-                result = self.sheets.update_range(
-                    spreadsheet_id=profile["google_sheet_id"],
-                    range_name=range_name,
-                    values=values,
-                )
-                verification = self._verify_sheet_write(
-                    spreadsheet_id=profile["google_sheet_id"],
-                    range_name=range_name,
-                )
-                self._record_transaction_audit(
-                    mode="bulk_update",
-                    requested_payload=values,
-                    result=result,
-                    verification=verification,
-                )
-                if not verification["verified"]:
-                    return {
-                        "status": "needs_review",
-                        "message": "I could not verify that the transaction rows were written to the sheet.",
-                        "details": {
-                            "result": result,
-                            "verification": verification,
-                            "sheet_url": sheet_url,
-                        },
-                    }
-                return {
-                    "status": "success",
-                    "message": f"Transactions recorded. Sheet: {sheet_url}",
-                    "details": {
-                        "result": result,
-                        "verification": verification,
-                        "sheet_url": sheet_url,
-                    },
-                }
-            if not row_values:
-                return {
-                    "status": "needs_review",
-                    "message": "I could not record that transaction because the ledger row was incomplete.",
-                    "details": {
-                        "plan_parameters": parameters,
-                        "sheet_url": sheet_url,
-                    },
-                }
-            result = self.sheets.append_ledger_row(
-                spreadsheet_id=profile["google_sheet_id"],
-                worksheet_name=worksheet_name,
-                row_values=row_values,
-            )
-            updated_range = result.get("updates", {}).get("updatedRange")
-            verification = self._verify_sheet_write(
-                spreadsheet_id=profile["google_sheet_id"],
-                range_name=updated_range or f"{worksheet_name}!A:Z",
-            )
-            self._record_transaction_audit(
-                mode="append",
-                requested_payload=row_values,
-                result=result,
-                verification=verification,
-            )
-            if not verification["verified"]:
-                return {
-                    "status": "needs_review",
-                    "message": "I could not verify that the transaction was written to the sheet.",
-                    "details": {
-                        "result": result,
-                        "verification": verification,
-                        "sheet_url": sheet_url,
-                    },
-                }
-            return {
-                "status": "success",
-                "message": f"Transaction recorded. Sheet: {sheet_url}",
-                "details": {
-                    "result": result,
-                    "verification": verification,
-                    "sheet_url": sheet_url,
-                },
-            }
-
-        if action == ACTION_READ_SHEET:
-            profile = self.ensure_business_workspace_assets()
-            range_name = parameters.get("range_name", "Ledger!A1:Z20")
-            # Add pagination for large ranges
-            if "2000" in range_name:
-                range_name = range_name.replace("2000", "200")
-            values = self.sheets.read_range(
-                spreadsheet_id=profile["google_sheet_id"],
-                range_name=range_name,
-            )
-            return {"status": "success", "message": "Sheet data retrieved.", "details": values}
-
-        if action == ACTION_CREATE_BUSINESS_DOC:
-            profile = self.ensure_business_workspace_assets()
-            return {
-                "status": "success",
-                "message": "Business document is ready.",
-                "details": {"document_id": profile["google_doc_id"]},
-            }
-
-        if action == ACTION_APPEND_DOC_NOTE:
-            profile = self.ensure_business_workspace_assets()
-            result = self.docs.append_text(
-                document_id=profile["google_doc_id"],
-                text=parameters.get("text", ""),
-            )
-            return {"status": "success", "message": "Document note saved.", "details": result}
-
-        if action == ACTION_CALCULATE_PAYROLL:
-            from skills.payroll_engine import calculate_simple_payroll
-            gross_pay = self._safe_float(parameters.get("gross_pay", 0))
-            federal_rate = float(parameters.get("federal_rate", 0.12))
-            if gross_pay <= 0:
-                return {"status": "needs_review", "message": "Gross pay must be a positive number.", "details": {"parameters": parameters}}
-            calc = calculate_simple_payroll(gross_pay=gross_pay, federal_rate=federal_rate)
-            return {
-                "status": "success",
-                "message": f"Payroll: Gross ${calc.gross_pay:.2f} | Federal ${calc.federal_withholding:.2f} | SS ${calc.social_security:.2f} | Medicare ${calc.medicare:.2f} | Net ${calc.net_pay:.2f}.",
-                "details": {"gross_pay": calc.gross_pay, "federal_withholding": calc.federal_withholding, "social_security": calc.social_security, "medicare": calc.medicare, "net_pay": calc.net_pay},
-            }
-
-        if action == ACTION_RESEARCH_TAX:
-            from skills.tax_researcher import fetch_tax_update
-            url = parameters.get("url", "").strip()
-            if not url:
-                return {"status": "needs_review", "message": "A URL is required for tax research.", "details": {}}
-            result = fetch_tax_update(url)
-            self.memory.record_learned_source({"url": result.url, "title": result.title, "summary": result.summary, "topic": "tax"})
-            return {"status": "success", "message": f"Tax research complete. Stored: {result.title}", "details": {"url": result.url, "title": result.title, "summary": result.summary}}
-
-        return {
-            "status": "success",
-            "message": plan.get("response", "No tool call was needed."),
-            "details": {"action": action, "parameters": parameters},
-        }
+        result = _execute_action(
+            plan, user_input,
+            sheets=self.sheets,
+            docs=self.docs,
+            memory=self.memory,
+            ensure_workspace=self.ensure_business_workspace_assets,
+        )
+        self.workspace_boot_error = result.get("details", {}).get("workspace_boot_error")
+        return result
 
     def record_structured_transaction(
         self,
