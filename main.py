@@ -26,6 +26,15 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from core.model_client import get_model_client
+from core.ai_engine import (
+    build_messages as _build_messages,
+    build_financial_context as _build_financial_context,
+    build_learned_context as _build_learned_context,
+    enrich_with_category as _enrich_with_category,
+    extract_action_plan as _extract_action_plan,
+    parse_json_response as _parse_json_response,
+    self_reflect as _self_reflect,
+)
 from core.ledger_utils import (
     LEDGER_HEADERS as _LEDGER_HEADERS,
     normalize_row as _normalize_row,
@@ -206,74 +215,20 @@ class CPAAgent:
         return None
 
     def _build_financial_context(self) -> str:
-        parts = []
-        try:
-            overdue = self.ar_ap_engine.get_overdue_items()
-            upcoming = self.ar_ap_engine.get_upcoming_due(days_ahead=7)
-            overdue_r = len(overdue.get("receivables", []))
-            overdue_p = len(overdue.get("payables", []))
-            upcoming_p = len(upcoming.get("payables", []))
-            if overdue_r or overdue_p or upcoming_p:
-                parts.append(
-                    f"AR/AP snapshot: {overdue_r} overdue receivable(s), "
-                    f"{overdue_p} overdue payable(s), {upcoming_p} payable(s) due within 7 days."
-                )
-        except Exception:  # noqa: BLE001
-            pass
-        try:
-            budget_data = self.memory.load_budgets()
-            budgets = budget_data.get("budgets", [])
-            if budgets:
-                parts.append(f"Active budgets: {len(budgets)} monthly budget(s) set.")
-        except Exception:  # noqa: BLE001
-            pass
-        return "\n".join(parts)
+        return _build_financial_context(self.ar_ap_engine, self.memory)
 
     def _enrich_with_category(self, user_input: str) -> str:
-        lower = user_input.lower()
-        is_transaction_intent = any(
-            kw in lower for kw in ("record", "add", "log", "post", "expense", "income", "spent", "received", "paid")
-        )
-        if not is_transaction_intent:
-            return user_input
-        try:
-            suggestion = self.categorization.suggest_category(user_input)
-            if suggestion and suggestion.get("confidence", 0) >= 0.6:
-                return (
-                    f"[Suggested category from local rules: {suggestion['category']} "
-                    f"(confidence {suggestion['confidence']:.0%})]\n{user_input}"
-                )
-        except Exception:  # noqa: BLE001
-            pass
-        return user_input
+        return _enrich_with_category(user_input, self.categorization)
 
     def build_messages(self, user_input: str) -> list[dict[str, str]]:
         self.refresh_rules()
-        business = self.memory.get_current_business()
-        short_term = self.memory.load_short_term_context()
-        learned_context = self._build_learned_context()
-        financial_context = self._build_financial_context()
-        custom_rules = json.dumps(self.custom_rules, indent=2)
-        business_context = json.dumps(business, indent=2)
-        short_term_context = json.dumps(short_term, indent=2)
-
-        system_content = (
-            f"{self.system_prompt}\n\n"
-            "Custom correction rules that must be applied before every action:\n"
-            f"{custom_rules}\n\n"
-            "Current active business silo:\n"
-            f"{business_context}\n\n"
-            "Current short-term context:\n"
-            f"{short_term_context}\n\n"
+        return _build_messages(
+            user_input,
+            system_prompt=self.system_prompt,
+            custom_rules=self.custom_rules,
+            memory=self.memory,
+            ar_ap_engine=self.ar_ap_engine,
         )
-        if financial_context:
-            system_content += f"Current financial alerts:\n{financial_context}\n\n"
-        system_content += f"Learned operating knowledge:\n{learned_context}"
-
-        return [
-            {"role": "system", "content": system_content},
-            {"role": "user", "content": user_input},
-        ]
 
     @lru_cache(maxsize=128)  # Cache AI predictions
     def run_reasoning_cached(self, user_input: str) -> dict[str, Any]:
@@ -284,26 +239,10 @@ class CPAAgent:
         return self.run_reasoning_cached(user_input)
 
     def extract_action_plan(self, response_text: str) -> dict[str, Any]:
-        text = re.sub(r"```(?:json)?\s*", "", response_text).strip().strip("`").strip()
-        try:
-            start = text.index("{")
-            end = text.rindex("}") + 1
-            return json.loads(text[start:end])
-        except (ValueError, json.JSONDecodeError):
-            return {
-                "thought": "Model returned plain text; no tool action extracted.",
-                "action": "respond",
-                "parameters": {},
-                "response": response_text.strip(),
-            }
+        return _extract_action_plan(response_text)
 
     def _parse_json_response(self, text: str) -> dict[str, Any] | None:
-        try:
-            start = text.index("{")
-            end = text.rindex("}") + 1
-            return json.loads(text[start:end])
-        except (ValueError, json.JSONDecodeError):
-            return None
+        return _parse_json_response(text)
 
     def execute_action(self, plan: dict[str, Any], user_input: str) -> dict[str, Any]:
         action = plan.get("action", ACTION_RESPOND)
@@ -994,16 +933,7 @@ class CPAAgent:
         )
 
     def _build_learned_context(self) -> str:
-        entries = self.memory.load_learned_sources().get("entries", [])
-        if not entries:
-            return "No learned sources stored yet."
-        lines = []
-        for entry in entries[-6:]:
-            domain = urlparse(entry.get("url", "")).netloc or "source"
-            lines.append(
-                f"- {entry.get('title', 'Untitled')} ({domain}): {entry.get('summary', '')[:280]}"
-            )
-        return "\n".join(lines)
+        return _build_learned_context(self.memory)
 
     @staticmethod
     def _safe_float(value: Any) -> float:
@@ -1049,37 +979,13 @@ class CPAAgent:
         return profile
 
     def self_reflect(self, user_input: str, draft_result: dict[str, Any]) -> dict[str, Any]:
-        reflection_prompt = [
-            {
-                "role": "system",
-                "content": (
-                    "You are the CPA-Agent safety verifier. Review the proposed result for math mistakes, "
-                    "business silo leakage, unsupported tax claims, and risky accounting categorization. "
-                    "Respond only in JSON with keys approved, concerns, corrected_message."
-                ),
-            },
-            {
-                "role": "user",
-                "content": json.dumps(
-                    {
-                        "user_input": user_input,
-                        "active_business": self.memory.get_current_business(),
-                        "draft_result": draft_result,
-                        "custom_rules": self.custom_rules,
-                    },
-                    indent=2,
-                ),
-            },
-        ]
-        reflection_text = self.reflection_client.chat(reflection_prompt)
-        result = self._parse_json_response(reflection_text)
-        if result is not None:
-            return result
-        return {
-            "approved": False,
-            "concerns": ["Reflection step returned malformed output."],
-            "corrected_message": "I need a manual review before I confirm that action.",
-        }
+        return _self_reflect(
+            user_input,
+            draft_result,
+            reflection_client=self.reflection_client,
+            memory=self.memory,
+            custom_rules=self.custom_rules,
+        )
 
     def update_short_term_memory(self, user_input: str, outcome: dict[str, Any]) -> None:
         self.memory.append_conversation_entry(
