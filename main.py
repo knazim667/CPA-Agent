@@ -26,6 +26,19 @@ from dotenv import load_dotenv
 load_dotenv()
 
 from core.model_client import get_model_client
+from core.ledger_utils import (
+    LEDGER_HEADERS as _LEDGER_HEADERS,
+    normalize_row as _normalize_row,
+    normalize_bulk_values as _normalize_bulk_values,
+    safe_float as _safe_float,
+    sheet_url as _sheet_url,
+    summarize_ledger_rows as _summarize_ledger_rows,
+    build_row_values_from_plan as _build_row_values_from_plan,
+    infer_bulk_values_from_user_input as _infer_bulk_values_from_user_input,
+    infer_dates_from_text as _infer_dates_from_text,
+    next_ledger_row_number as _next_ledger_row_number,
+    verify_sheet_write as _verify_sheet_write,
+)
 from core.command_detectors import (
     detect_business_switch as _detect_business_switch,
     detect_business_rename as _detect_business_rename,
@@ -69,10 +82,7 @@ ACTION_RESPOND = "respond"
 class CPAAgent:
     """Optimized CPAAgent class with caching."""
 
-    LEDGER_HEADERS = [
-        "Date", "Description", "Category", "Amount", "Type",
-        "Reference", "Notes"
-    ]
+    LEDGER_HEADERS = _LEDGER_HEADERS
 
     # Cache configuration
     _STATUS_CACHE_TTL = 2.0  # seconds
@@ -937,151 +947,32 @@ class CPAAgent:
         }
 
     def _summarize_ledger_rows(self, rows: list[list[Any]]) -> dict[str, Any]:
-        if not rows:
-            return {
-                "income_total": 0.0,
-                "expense_total": 0.0,
-                "transaction_count": 0,
-                "recent_transactions": [],
-            }
-        data_rows = rows[1:] if rows[0][: len(self.LEDGER_HEADERS)] == self.LEDGER_HEADERS else rows
-        income_total = 0.0
-        expense_total = 0.0
-        parsed_rows: list[dict[str, Any]] = []
-        for row in data_rows:
-            if len(row) < 5:
-                continue
-            amount = self._safe_float(row[3] if len(row) > 3 else 0)
-            entry_type = str(row[4]).strip().lower()
-            record = {
-                "date": str(row[0]) if len(row) > 0 else "",
-                "description": str(row[1]) if len(row) > 1 else "",
-                "category": str(row[2]) if len(row) > 2 else "",
-                "amount": round(amount, 2),
-                "type": str(row[4]) if len(row) > 4 else "",
-                "reference": str(row[5]) if len(row) > 5 else "",
-                "notes": str(row[6]) if len(row) > 6 else "",
-            }
-            parsed_rows.append(record)
-            if entry_type == "income":
-                income_total += amount
-            else:
-                expense_total += amount
-        return {
-            "income_total": income_total,
-            "expense_total": expense_total,
-            "transaction_count": len(parsed_rows),
-            "recent_transactions": list(reversed(parsed_rows[-5:])),
-        }
+        return _summarize_ledger_rows(rows, self.LEDGER_HEADERS)
 
     def _build_row_values_from_plan(self, parameters: dict[str, Any]) -> list[Any]:
-        row_values = parameters.get("row_values")
-        if row_values:
-            return self._normalize_row(row_values)
-        if parameters.get("date") and parameters.get("description") and parameters.get("amount") is not None:
-            category = parameters.get("category") or parameters.get("account") or "Uncategorized"
-            transaction_type = parameters.get("type") or parameters.get("entry_type") or "Expense"
-            return self._normalize_row([
-                parameters.get("date", ""),
-                parameters.get("description", ""),
-                category,
-                parameters.get("amount", ""),
-                transaction_type,
-                parameters.get("reference", ""),
-                parameters.get("notes", ""),
-            ])
-        return []
+        return _build_row_values_from_plan(parameters)
 
     def _normalize_bulk_values(self, values: Any) -> list[list[Any]]:
-        if not values or not isinstance(values, list):
-            return []
-        normalized = []
-        for row in values:
-            if isinstance(row, list):
-                normalized_row = self._normalize_row(row)
-                if normalized_row:
-                    normalized.append(normalized_row)
-        return normalized
+        return _normalize_bulk_values(values)
 
     def _normalize_row(self, row: list[Any]) -> list[Any]:
-        normalized = list(row[:7])
-        while len(normalized) < 7:
-            normalized.append("")
-        if len(normalized) >= 5 and not normalized[4]:
-            normalized[4] = "Expense"
-        if len(normalized) >= 3 and not normalized[2]:
-            normalized[2] = "Uncategorized"
-        return normalized
+        return _normalize_row(row)
 
     def _infer_bulk_values_from_user_input(self, user_input: str, parameters: dict[str, Any]) -> list[list[Any]]:
-        lines = [line.strip(" -\t") for line in user_input.splitlines() if line.strip()]
-        extracted_items: list[tuple[str, float]] = []
-        for line in lines:
-            match = re.match(r"(.+?)\s*[:\-]\s*\$?([0-9]+(?:\.[0-9]{1,2})?)$", line)
-            if match:
-                extracted_items.append((match.group(1).strip(), float(match.group(2))))
-        if not extracted_items:
-            return []
-        default_category = parameters.get("category") or parameters.get("account") or "Start-up Costs"
-        entry_type = parameters.get("type") or parameters.get("entry_type") or "Expense"
-        date_map = self._infer_dates_from_text(user_input)
-        fallback_date = parameters.get("date") or date_map.get("default") or ""
-        text_lines = user_input.splitlines()
-        rows = []
-        for description, amount in extracted_items:
-            matched_date = fallback_date
-            desc_line_idx = next(
-                (i for i, line in enumerate(text_lines) if description.lower() in line.lower()), -1
-            )
-            if desc_line_idx >= 0 and len(date_map) > 1:
-                preceding = "\n".join(text_lines[: desc_line_idx + 1])
-                preceding_dates = re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", preceding)
-                if preceding_dates:
-                    matched_date = preceding_dates[-1]
-            for label, label_date in date_map.items():
-                if label != "default" and label in description.lower():
-                    matched_date = label_date
-                    break
-            rows.append(self._normalize_row([matched_date, description, default_category, amount, entry_type, "", parameters.get("notes", "")]))
-        return rows
+        return _infer_bulk_values_from_user_input(user_input, parameters)
 
     def _infer_dates_from_text(self, text: str) -> dict[str, str]:
-        mappings: dict[str, str] = {}
-        all_dates = re.findall(r"\b\d{1,2}/\d{1,2}/\d{4}\b", text)
-        if not all_dates:
-            return mappings
-        mappings["default"] = all_dates[-1]
-        for match in re.finditer(
-            r"(?P<label>[A-Za-z0-9 /]+?)\s+(?:is on|dated)\s+(?P<date>\d{1,2}/\d{1,2}/\d{4})",
-            text,
-            re.IGNORECASE,
-        ):
-            mappings[match.group("label").strip().lower()] = match.group("date")
-        return mappings
+        return _infer_dates_from_text(text)
 
     def _next_ledger_row_number(self, spreadsheet_id: str, worksheet_name: str) -> int:
-        rows = self.sheets.read_range(spreadsheet_id=spreadsheet_id, range_name=f"{worksheet_name}!A:A")
-        return max(2, len(rows) + 1)
+        return _next_ledger_row_number(self.sheets, spreadsheet_id, worksheet_name)
 
     @staticmethod
     def _sheet_url(spreadsheet_id: str) -> str:
-        return f"https://docs.google.com/spreadsheets/d/{spreadsheet_id}/edit"
+        return _sheet_url(spreadsheet_id)
 
     def _verify_sheet_write(self, spreadsheet_id: str, range_name: str) -> dict[str, Any]:
-        try:
-            values = self.sheets.read_range(spreadsheet_id=spreadsheet_id, range_name=range_name)
-            verified = any(any(str(cell).strip() for cell in row) for row in values)
-            return {
-                "verified": verified,
-                "range_name": range_name,
-                "values": values,
-            }
-        except Exception as exc:  # noqa: BLE001
-            return {
-                "verified": False,
-                "range_name": range_name,
-                "error": str(exc),
-            }
+        return _verify_sheet_write(self.sheets, spreadsheet_id, range_name)
 
     def _record_transaction_audit(
         self,
@@ -1116,13 +1007,7 @@ class CPAAgent:
 
     @staticmethod
     def _safe_float(value: Any) -> float:
-        if isinstance(value, (int, float)):
-            return float(value)
-        cleaned = str(value).replace("$", "").replace(",", "").strip()
-        try:
-            return float(cleaned)
-        except ValueError:
-            return 0.0
+        return _safe_float(value)
 
     def ensure_business_workspace_assets(self) -> dict[str, Any]:
         profile = self.memory.get_current_business()
