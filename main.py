@@ -1,25 +1,12 @@
-"""CPA-Agent FastAPI backend with optimizations."""
+"""CPA-Agent — thin CPAAgent orchestrator. All domain logic lives in core/."""
 
-import asyncio
 import json
 import os
-import re
 import time
-import uuid
-from datetime import date, timedelta
 from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException, Request, Response
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field
-from slowapi import Limiter, _rate_limit_exceeded_handler
-from slowapi.util import get_remote_address
-from slowapi.middleware import SlowAPIMiddleware
-
-import requests
 import speech_recognition as sr
 from dotenv import load_dotenv
 
@@ -31,78 +18,31 @@ from core.transaction_recorder import (
     record_bulk_transactions as _record_bulk_transactions,
     draft_document_transactions as _draft_document_transactions,
 )
-from core.ai_engine import (
-    build_messages as _build_messages,
-    build_financial_context as _build_financial_context,
-    build_learned_context as _build_learned_context,
-    enrich_with_category as _enrich_with_category,
-    extract_action_plan as _extract_action_plan,
-    parse_json_response as _parse_json_response,
-    self_reflect as _self_reflect,
-)
-from core.ledger_utils import (
-    LEDGER_HEADERS as _LEDGER_HEADERS,
-    normalize_row as _normalize_row,
-    normalize_bulk_values as _normalize_bulk_values,
-    safe_float as _safe_float,
-    sheet_url as _sheet_url,
-    summarize_ledger_rows as _summarize_ledger_rows,
-    build_row_values_from_plan as _build_row_values_from_plan,
-    infer_bulk_values_from_user_input as _infer_bulk_values_from_user_input,
-    infer_dates_from_text as _infer_dates_from_text,
-    next_ledger_row_number as _next_ledger_row_number,
-    verify_sheet_write as _verify_sheet_write,
-)
-from core.command_detectors import (
-    detect_business_switch as _detect_business_switch,
-    detect_business_rename as _detect_business_rename,
-    detect_business_creation as _detect_business_creation,
-    extract_learning_urls as _extract_learning_urls,
-    is_learning_request as _is_learning_request,
-    is_recalculation_request as _is_recalculation_request,
-    detect_recurring_command as _detect_recurring_command,
-    detect_budget_command as _detect_budget_command,
-    detect_reconcile_command as _detect_reconcile_command,
-    detect_ar_ap_command as _detect_ar_ap_command,
-    detect_tax_command as _detect_tax_command,
-    detect_delete_command as _detect_delete_command,
-    detect_split_command as _detect_split_command,
-)
+from core.ai_engine import build_messages as _build_messages, extract_action_plan as _extract_action_plan
+from core.ledger_utils import LEDGER_HEADERS as _LEDGER_HEADERS, normalize_row as _normalize_row, safe_float as _safe_float
 from core.action_executor import execute_action as _execute_action
+from core.status_builder import get_dashboard_snapshot as _get_dashboard_snapshot, build_status as _build_status, get_model_status as _get_model_status
+from core.presentation_builder import build_presentation as _build_presentation_fn, clean_response_text as _clean_response_text
+from core.command_handler import handle_command as _handle_command, handle_command_with_metadata as _handle_command_with_metadata
+from core.workspace_manager import ensure_business_workspace_assets as _ensure_workspace
 from memory_manager import MemoryManager
 from skills import (
     GoogleDocsManager, GoogleSheetsManager, KnowledgeManager,
     CategorizationEngine, RecurringEngine, FinancialStatements,
-    BudgetEngine, ReconciliationEngine, ARAPEngine, TaxEngine
+    BudgetEngine, ReconciliationEngine, ARAPEngine, TaxEngine,
 )
-
 
 ROOT_DIR = Path(__file__).resolve().parent
 PERSONA_DIR = ROOT_DIR / "persona"
 SYSTEM_PROMPT_PATH = PERSONA_DIR / "system_prompt.md"
 CUSTOM_RULES_PATH = PERSONA_DIR / "custom_rules.json"
 
-# Action constants
-ACTION_SWITCH_BUSINESS = "switch_business"
-ACTION_CREATE_BUSINESS = "create_business"
-ACTION_RECORD_TRANSACTION = "record_transaction"
-ACTION_READ_SHEET = "read_sheet"
-ACTION_CREATE_BUSINESS_DOC = "create_business_doc"
-ACTION_APPEND_DOC_NOTE = "append_doc_note"
-ACTION_CALCULATE_PAYROLL = "calculate_payroll"
-ACTION_RESEARCH_TAX = "research_tax"
-ACTION_RESPOND = "respond"
-
 
 class CPAAgent:
-    """Optimized CPAAgent class with caching."""
+    """Thin orchestrator — delegates all domain logic to core/ modules."""
 
     LEDGER_HEADERS = _LEDGER_HEADERS
-
-    # Cache configuration
-    _STATUS_CACHE_TTL = 2.0  # seconds
-    _LEDGER_CACHE_TTL = 30.0  # seconds for ledger queries
-    _PREDICTION_CACHE_TTL = 60.0  # seconds for AI predictions
+    _STATUS_CACHE_TTL = 2.0
 
     def __init__(self) -> None:
         self.memory = MemoryManager(ROOT_DIR / "memory")
@@ -113,12 +53,8 @@ class CPAAgent:
         self.sheets = GoogleSheetsManager()
         self.docs = GoogleDocsManager()
         self.knowledge = KnowledgeManager()
-        self.categorization = CategorizationEngine(
-            rules_data=self.memory.load_category_rules()
-        )
-        self.recurring = RecurringEngine(
-            recurring_data=self.memory.load_recurring()
-        )
+        self.categorization = CategorizationEngine(rules_data=self.memory.load_category_rules())
+        self.recurring = RecurringEngine(recurring_data=self.memory.load_recurring())
         self.financial_statements = FinancialStatements()
         self.budget_engine = BudgetEngine()
         self.reconciliation_engine = ReconciliationEngine()
@@ -143,6 +79,7 @@ class CPAAgent:
         self.input_mode = self._determine_input_mode()
         self.workspace_boot_error: str | None = None
         self._workbook_ready: set[str] = set()
+        self.custom_rules_path = CUSTOM_RULES_PATH
         self._load_persona_assets()
         try:
             self.ensure_business_workspace_assets()
@@ -220,58 +157,33 @@ class CPAAgent:
             return cleaned.strip(" ,.")
         return None
 
-    def _build_financial_context(self) -> str:
-        return _build_financial_context(self.ar_ap_engine, self.memory)
-
-    def _enrich_with_category(self, user_input: str) -> str:
-        return _enrich_with_category(user_input, self.categorization)
-
-    def build_messages(self, user_input: str) -> list[dict[str, str]]:
+    @lru_cache(maxsize=128)
+    def run_reasoning_cached(self, user_input: str) -> dict[str, Any]:
         self.refresh_rules()
-        return _build_messages(
+        messages = _build_messages(
             user_input,
             system_prompt=self.system_prompt,
             custom_rules=self.custom_rules,
             memory=self.memory,
             ar_ap_engine=self.ar_ap_engine,
         )
-
-    @lru_cache(maxsize=128)  # Cache AI predictions
-    def run_reasoning_cached(self, user_input: str) -> dict[str, Any]:
-        response_text = self.model_client.chat(self.build_messages(user_input))
-        return self.extract_action_plan(response_text)
+        return _extract_action_plan(self.model_client.chat(messages))
 
     def run_reasoning(self, user_input: str) -> dict[str, Any]:
         return self.run_reasoning_cached(user_input)
 
-    def extract_action_plan(self, response_text: str) -> dict[str, Any]:
-        return _extract_action_plan(response_text)
-
-    def _parse_json_response(self, text: str) -> dict[str, Any] | None:
-        return _parse_json_response(text)
-
     def execute_action(self, plan: dict[str, Any], user_input: str) -> dict[str, Any]:
         result = _execute_action(
             plan, user_input,
-            sheets=self.sheets,
-            docs=self.docs,
-            memory=self.memory,
+            sheets=self.sheets, docs=self.docs, memory=self.memory,
             ensure_workspace=self.ensure_business_workspace_assets,
         )
         self.workspace_boot_error = result.get("details", {}).get("workspace_boot_error")
         return result
 
-    def record_structured_transaction(
-        self,
-        *,
-        date: str,
-        description: str,
-        category: str,
-        amount: float,
-        entry_type: str,
-        reference: str = "",
-        notes: str = "",
-    ) -> dict[str, Any]:
+    def record_structured_transaction(self, *, date: str, description: str, category: str,
+                                      amount: float, entry_type: str, reference: str = "",
+                                      notes: str = "") -> dict[str, Any]:
         profile = self.ensure_business_workspace_assets()
         return _record_structured_transaction(
             date=date, description=description, category=category, amount=amount,
@@ -280,13 +192,7 @@ class CPAAgent:
             reflection_client=self.reflection_client, custom_rules=self.custom_rules,
         )
 
-    def record_bulk_transactions(
-        self,
-        rows: list[list[Any]],
-        *,
-        source_name: str = "",
-        source_note: str = "",
-    ) -> dict[str, Any]:
+    def record_bulk_transactions(self, rows: list, *, source_name: str = "", source_note: str = "") -> dict[str, Any]:
         profile = self.ensure_business_workspace_assets()
         return _record_bulk_transactions(
             rows, source_name=source_name, source_note=source_note,
@@ -294,66 +200,20 @@ class CPAAgent:
             reflection_client=self.reflection_client, custom_rules=self.custom_rules,
         )
 
-    def draft_document_transactions(
-        self,
-        *,
-        file_name: str,
-        document_text: str,
-        instruction: str = "",
-    ) -> dict[str, Any]:
+    def draft_document_transactions(self, *, file_name: str, document_text: str, instruction: str = "") -> dict[str, Any]:
         return _draft_document_transactions(
             file_name=file_name, document_text=document_text, instruction=instruction,
             model_client=self.model_client, memory=self.memory,
         )
 
     def list_businesses(self) -> list[dict[str, str]]:
-        businesses = []
-        for key in self.memory.list_business_keys():
-            profile = self.memory.load_business_profile(key)
-            businesses.append(
-                {
-                    "key": key,
-                    "business_name": profile["business_name"],
-                }
-            )
-        return businesses
+        return [
+            {"key": key, "business_name": self.memory.load_business_profile(key)["business_name"]}
+            for key in self.memory.list_business_keys()
+        ]
 
     def get_dashboard_snapshot(self) -> dict[str, Any]:
-        current = self.memory.get_current_business()
-        skill_memory = self.memory.load_skill_memory()
-        transaction_audit = self.memory.load_transaction_audit().get("entries", [])
-        conversation = self.memory.load_short_term_context().get("conversation", [])
-        totals = {
-            "income_total": 0.0,
-            "expense_total": 0.0,
-            "transaction_count": 0,
-            "recent_transactions": [],
-        }
-        if current.get("google_sheet_id"):
-            try:
-                # Paginate for large datasets
-                rows = self.sheets.read_range(
-                    spreadsheet_id=current["google_sheet_id"],
-                    range_name="Ledger!A1:G100",
-                )
-                totals = self._summarize_ledger_rows(rows)
-            except Exception as exc:  # noqa: BLE001
-                totals["ledger_error"] = str(exc)
-        success_history = [item for item in skill_memory.get("history", []) if item.get("success")]
-        failure_history = [item for item in skill_memory.get("history", []) if not item.get("success")]
-        recent_audits = [entry for entry in transaction_audit if entry.get("business") == self.memory.current_business_key][-5:]
-        return {
-            "active_business_name": current["business_name"],
-            "transaction_count": totals["transaction_count"],
-            "income_total": round(totals["income_total"], 2),
-            "expense_total": round(totals["expense_total"], 2),
-            "recent_transactions": totals["recent_transactions"],
-            "recent_audits": recent_audits,
-            "conversation_count": len(conversation),
-            "successful_actions": len(success_history),
-            "flagged_actions": len(failure_history),
-            "ledger_error": totals.get("ledger_error"),
-        }
+        return _get_dashboard_snapshot(self.memory, self.sheets, self.LEDGER_HEADERS)
 
     def get_status(self) -> dict[str, Any]:
         now = time.monotonic()
@@ -361,818 +221,35 @@ class CPAAgent:
             ts, cached = self._status_cache
             if now - ts < self._STATUS_CACHE_TTL:
                 return cached
-        result = self._build_status()
+        result = _build_status(self)
         self._status_cache = (now, result)
         return result
 
-    def _build_status(self) -> dict[str, Any]:
-        today_str = date.today().isoformat()
-        due: list = []
-        if today_str != getattr(self, "_last_schedule_check", None):
-            due = self.recurring.run_due_schedules()
-            self._last_schedule_check = today_str
-        if due:
-            self._save_recurring()
-            for entry in due:
-                try:
-                    self.record_structured_transaction(
-                        date=entry.get("last_posted_date", ""),
-                        description=entry["description"],
-                        category=entry["category"],
-                        amount=entry["amount"],
-                        entry_type=entry["entry_type"],
-                        notes="Auto-posted by recurring schedule",
-                    )
-                except Exception as exc:  # noqa: BLE001
-                    self.memory.record_skill_outcome(
-                        action_name="recurring_auto_post",
-                        success=False,
-                        details={"error": str(exc), "entry": entry},
-                    )
-        short_term = self.memory.load_short_term_context()
-        current = self.memory.get_current_business()
-        raw_conv = short_term.get("conversation", [])
-        conversation = []
-        for entry in raw_conv:
-            if entry.get("user_input"):
-                conversation.append({"role": "user", "content": entry["user_input"]})
-            if entry.get("outcome", {}).get("message"):
-                conversation.append({"role": "agent", "content": entry["outcome"]["message"]})
-        # Proactive AR/AP alerts
-        overdue_ar_ap: dict = {"receivables": [], "payables": []}
-        upcoming_ar_ap: dict = {"receivables": [], "payables": []}
-        try:
-            overdue_ar_ap = self.ar_ap_engine.get_overdue_items()
-            upcoming_ar_ap = self.ar_ap_engine.get_upcoming_due(days_ahead=7)
-        except Exception:  # noqa: BLE001
-            pass
-        return {
-            "active_business_key": self.memory.current_business_key,
-            "active_business": current,
-            "businesses": self.list_businesses(),
-            "conversation": conversation,
-            "workspace_boot_error": self.workspace_boot_error,
-            "input_mode": self.input_mode,
-            "model_config": self.get_model_status(),
-            "dashboard": self.get_dashboard_snapshot(),
-            "learned_source_count": len(self.memory.load_learned_sources().get("entries", [])),
-            "tax_alerts": self.tax_engine.get_upcoming_alerts(days_ahead=60),
-            "overdue_ar_ap": overdue_ar_ap,
-            "upcoming_ar_ap": upcoming_ar_ap,
-        }
-
     def get_model_status(self) -> dict[str, str]:
-        provider = os.getenv("MODEL_PROVIDER", "ollama").strip().lower() or "ollama"
-        if provider == "ollama":
-            reasoning_model = (
-                os.getenv("OLLAMA_QUALITY_MODEL")
-                if self.reasoning_mode == "quality" and os.getenv("OLLAMA_QUALITY_MODEL")
-                else os.getenv("OLLAMA_MODEL", "gpt-oss:20b")
-            )
-            reflection_model = (
-                os.getenv("OLLAMA_REFLECTION_MODEL")
-                or os.getenv("OLLAMA_AUDIT_MODEL")
-                or reasoning_model
-            )
-        elif provider == "openai":
-            reasoning_model = os.getenv("OPENAI_MODEL", "gpt-4o-mini")
-            reflection_model = reasoning_model
-        elif provider == "openrouter":
-            reasoning_model = os.getenv("OPENROUTER_MODEL", "nvidia/nemotron-3-super-120b-a12b:free")
-            reflection_model = reasoning_model
-        else:
-            reasoning_model = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
-            reflection_model = reasoning_model
-        return {
-            "provider": provider,
-            "reasoning_mode": self.reasoning_mode,
-            "reasoning_model": reasoning_model,
-            "reflection_model": reflection_model,
-        }
-
-    def _summarize_ledger_rows(self, rows: list[list[Any]]) -> dict[str, Any]:
-        return _summarize_ledger_rows(rows, self.LEDGER_HEADERS)
-
-    def _build_row_values_from_plan(self, parameters: dict[str, Any]) -> list[Any]:
-        return _build_row_values_from_plan(parameters)
-
-    def _normalize_bulk_values(self, values: Any) -> list[list[Any]]:
-        return _normalize_bulk_values(values)
-
-    def _normalize_row(self, row: list[Any]) -> list[Any]:
-        return _normalize_row(row)
-
-    def _infer_bulk_values_from_user_input(self, user_input: str, parameters: dict[str, Any]) -> list[list[Any]]:
-        return _infer_bulk_values_from_user_input(user_input, parameters)
-
-    def _infer_dates_from_text(self, text: str) -> dict[str, str]:
-        return _infer_dates_from_text(text)
-
-    def _next_ledger_row_number(self, spreadsheet_id: str, worksheet_name: str) -> int:
-        return _next_ledger_row_number(self.sheets, spreadsheet_id, worksheet_name)
+        return _get_model_status(self.reasoning_mode)
 
     @staticmethod
-    def _sheet_url(spreadsheet_id: str) -> str:
-        return _sheet_url(spreadsheet_id)
-
-    def _verify_sheet_write(self, spreadsheet_id: str, range_name: str) -> dict[str, Any]:
-        return _verify_sheet_write(self.sheets, spreadsheet_id, range_name)
-
-    def _record_transaction_audit(
-        self,
-        *,
-        mode: str,
-        requested_payload: Any,
-        result: dict[str, Any],
-        verification: dict[str, Any],
-    ) -> None:
-        self.memory.record_transaction_audit(
-            {
-                "timestamp": time.time(),
-                "business": self.memory.current_business_key,
-                "mode": mode,
-                "requested_payload": requested_payload,
-                "result": result,
-                "verification": verification,
-            }
-        )
-
-    def _build_learned_context(self) -> str:
-        return _build_learned_context(self.memory)
+    def _normalize_row(row: list) -> list:
+        return _normalize_row(row)
 
     @staticmethod
     def _safe_float(value: Any) -> float:
         return _safe_float(value)
 
+    def _build_presentation(self, outcome: dict[str, Any], status: dict[str, Any], message: str) -> dict[str, Any] | None:
+        return _build_presentation_fn(outcome, status, message, self.LEDGER_HEADERS)
+
     def ensure_business_workspace_assets(self) -> dict[str, Any]:
-        profile = self.memory.get_current_business()
-        updates: dict[str, str] = {}
-        business_name = profile["business_name"]
-        if not profile.get("google_sheet_id") or profile["google_sheet_id"].startswith("replace-with-"):
-            spreadsheet = self.sheets.create_spreadsheet(
-                title=f"{business_name} CPA Ledger",
-                worksheet_name="Ledger",
-                header_row=[
-                    "Date",
-                    "Description",
-                    "Category",
-                    "Amount",
-                    "Type",
-                    "Reference",
-                    "Notes",
-                ],
-            )
-            updates["google_sheet_id"] = spreadsheet["spreadsheetId"]
-        target_sheet_id = updates.get("google_sheet_id", profile.get("google_sheet_id", ""))
-        if target_sheet_id and target_sheet_id not in self._workbook_ready:
-            self.sheets.ensure_financial_workbook(
-                spreadsheet_id=target_sheet_id,
-                business_name=business_name,
-            )
-            self._workbook_ready.add(target_sheet_id)
-        if not profile.get("google_doc_id") or str(profile["google_doc_id"]).startswith("replace-with-"):
-            document = self.docs.create_document(
-                title=f"{business_name} CPA Notes",
-                initial_text=(
-                    f"{business_name} working paper\n"
-                    "This document is managed by CPA-Agent.\n"
-                ),
-            )
-            updates["google_doc_id"] = document["documentId"]
-        if updates:
-            profile = self.memory.update_business_profile(self.memory.current_business_key, updates)
-        return profile
-
-    def self_reflect(self, user_input: str, draft_result: dict[str, Any]) -> dict[str, Any]:
-        return _self_reflect(
-            user_input,
-            draft_result,
-            reflection_client=self.reflection_client,
-            memory=self.memory,
-            custom_rules=self.custom_rules,
-        )
-
-    def update_short_term_memory(self, user_input: str, outcome: dict[str, Any]) -> None:
-        self.memory.append_conversation_entry(
-            {
-                "timestamp": time.time(),
-                "business": self.memory.current_business_key,
-                "user_input": user_input,
-                "outcome": outcome,
-            }
-        )
-
-    def detect_business_switch(self, user_input: str) -> str | None:
-        return _detect_business_switch(user_input)
-
-    def detect_business_rename(self, user_input: str) -> str | None:
-        return _detect_business_rename(user_input)
-
-    def detect_business_creation(self, user_input: str) -> str | None:
-        return _detect_business_creation(user_input)
-
-    @staticmethod
-    def extract_learning_urls(user_input: str) -> list[str]:
-        return _extract_learning_urls(user_input)
-
-    @staticmethod
-    def is_learning_request(user_input: str) -> bool:
-        return _is_learning_request(user_input)
-
-    @staticmethod
-    def is_recalculation_request(user_input: str) -> bool:
-        return _is_recalculation_request(user_input)
-
-    def maybe_store_correction_rule(self, user_input: str) -> None:
-        lowered = user_input.lower()
-        correction_markers = (
-            "no, that's",
-            "no that is",
-            "actually,",
-            "correction:",
-            "you should classify",
-            "it should be",
-        )
-        if not any(marker in lowered for marker in correction_markers):
-            return
-        self.memory.record_custom_rule(
-            user_input=user_input,
-            destination_path=CUSTOM_RULES_PATH,
-        )
-        self.refresh_rules()
+        return _ensure_workspace(self.memory, self.sheets, self.docs, self._workbook_ready)
 
     def handle_command(self, user_input: str) -> str:
-        if not user_input:
-            return "I heard the wake word, but not the request."
-        self.maybe_store_correction_rule(user_input)
-        if self.is_recalculation_request(user_input):
-            result = self.recalculate_accounts()
-            message = self._clean_response_text(result["message"])
-            self.update_short_term_memory(user_input, {"message": message, "details": result})
-            return message
-        rename_target = self.detect_business_rename(user_input)
-        if rename_target:
-            profile = self.rename_current_business(rename_target)
-            message = f"Renamed the active business to {profile['business_name']}."
-            self.update_short_term_memory(user_input, {"message": message})
-            return message
-        learn_urls = self.extract_learning_urls(user_input)
-        if learn_urls and self.is_learning_request(user_input):
-            result = self.learn_from_urls(learn_urls, topic="google_workspace")
-            message = (
-                f"Learned from {result['count']} source(s). "
-                "I'll use this knowledge for future Google Sheets and Docs work."
-            )
-            self.update_short_term_memory(user_input, {"message": message, "details": result})
-            return message
-        create_target = self.detect_business_creation(user_input)
-        if create_target:
-            business_key, profile, created = self.memory.create_business(create_target)
-            sheet_url = None
-            self.workspace_boot_error = None
-            try:
-                profile = self.ensure_business_workspace_assets()
-                sheet_url = self._sheet_url(profile["google_sheet_id"])
-            except Exception as exc:  # noqa: BLE001
-                self.workspace_boot_error = str(exc)
-            if created:
-                message = f"Created a new business silo for {profile['business_name']} and switched to it."
-            else:
-                message = f"{profile['business_name']} already existed, so I switched to it."
-            if sheet_url:
-                message = f"{message} Sheet: {sheet_url}"
-            elif self.workspace_boot_error:
-                message = f"{message} The local folder and config are ready, but Google workspace setup still needs attention."
-            self.update_short_term_memory(
-                user_input,
-                {
-                    "message": message,
-                    "details": {
-                        "business_key": business_key,
-                        "created": created,
-                        "profile": profile,
-                        "sheet_url": sheet_url,
-                        "workspace_boot_error": self.workspace_boot_error,
-                    },
-                },
-            )
-            return message
-        switch_target = self.detect_business_switch(user_input)
-        if switch_target:
-            profile = self.memory.switch_business(switch_target)
-            profile = self.ensure_business_workspace_assets()
-            message = f"Switched to {profile['business_name']}."
-            self.update_short_term_memory(user_input, {"message": message})
-            return message
-        plan = self.run_reasoning(self._enrich_with_category(user_input))
-        draft_result = self.execute_action(plan, user_input)
-        reflection = self.self_reflect(user_input, draft_result)
-        if reflection.get("approved"):
-            final_message = reflection.get("corrected_message") or draft_result["message"]
-        else:
-            final_message = reflection.get(
-                "corrected_message",
-                "I found a possible issue during verification and paused the action.",
-            )
-            draft_result["status"] = "needs_review"
-            draft_result["reflection_concerns"] = reflection.get("concerns", [])
-        self.memory.record_skill_outcome(
-            action_name=plan.get("action", "respond"),
-            success=bool(reflection.get("approved")),
-            details={
-                "user_input": user_input,
-                "plan": plan,
-                "draft_result": draft_result,
-                "reflection": reflection,
-            },
-        )
-        self.update_short_term_memory(user_input, {**draft_result, "message": final_message})
-        return self._clean_response_text(final_message)
-
-    def detect_recurring_command(self, user_input: str) -> dict | None:
-        return _detect_recurring_command(user_input)
-
-    def detect_budget_command(self, user_input: str) -> dict | None:
-        return _detect_budget_command(user_input)
-
-    def detect_reconcile_command(self, user_input: str) -> dict | None:
-        return _detect_reconcile_command(user_input)
-
-    def detect_ar_ap_command(self, user_input: str) -> dict | None:
-        return _detect_ar_ap_command(user_input)
-
-    def detect_tax_command(self, user_input: str) -> dict | None:
-        return _detect_tax_command(user_input)
-
-    def detect_delete_command(self, user_input: str) -> dict | None:
-        return _detect_delete_command(user_input)
-
-    def detect_split_command(self, user_input: str) -> dict | None:
-        return _detect_split_command(user_input)
-
-    def delete_duplicate_ledger_rows(self) -> dict[str, Any]:
-        profile = self.memory.get_current_business()
-        spreadsheet_id = profile.get("google_sheet_id")
-        if not spreadsheet_id:
-            return {"ok": False, "message": "No Google Sheet configured for this business."}
-        duplicates = self.sheets.find_duplicate_ledger_rows(spreadsheet_id)
-        if not duplicates:
-            return {"ok": True, "message": "No duplicate transactions found in the ledger. Everything looks clean."}
-        sheet_id = self.sheets.get_sheet_id(spreadsheet_id, "Ledger")
-        indices = [d["sheet_row_index"] for d in duplicates]
-        self.sheets.delete_rows(spreadsheet_id, sheet_id, indices)
-        lines = [f"  • {d['date']} | {d['description']} | {d['type']} ${d['amount']}" for d in duplicates]
-        return {
-            "ok": True,
-            "message": f"Deleted {len(duplicates)} duplicate row(s) from the ledger:\n" + "\n".join(lines),
-        }
+        return _handle_command(user_input, self)
 
     def handle_command_with_metadata(self, user_input: str) -> dict[str, Any]:
-        import calendar as _cal
-        delete_cmd = self.detect_delete_command(user_input)
-        if delete_cmd and delete_cmd.get("action") == "delete_duplicates":
-            result = self.delete_duplicate_ledger_rows()
-            self.update_short_term_memory(user_input, {"message": result["message"]})
-            return {"message": result["message"], "status": self.get_status(), "presentation": None}
-        split_cmd = self.detect_split_command(user_input)
-        if split_cmd:
-            try:
-                rows = self.categorization.split_transaction(
-                    split_cmd["total_amount"],
-                    split_cmd["splits"],
-                    date=date.today().isoformat(),
-                    parent_description=split_cmd["parent_description"],
-                )
-            except ValueError as exc:
-                return {
-                    "message": str(exc),
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            result = self.record_bulk_transactions(rows)
-            msg = result["message"]
-            self.update_short_term_memory(user_input, {"message": msg})
-            return {
-                "message": msg,
-                "status": self.get_status(),
-                "presentation": None,
-            }
-        budget_cmd = self.detect_budget_command(user_input)
-        if budget_cmd:
-            if budget_cmd.get("list"):
-                budget_data = self.memory.load_budgets()
-                count = len(budget_data.get("budgets", []))
-                return {"message": f"{count} budget(s) set.", "status": self.get_status(), "presentation": None}
-            new_budget = self.budget_engine.set_budget(
-                category=budget_cmd["category"],
-                amount=budget_cmd["amount"],
-                period="monthly",
-                business_key=self.memory.current_business_key,
-            )
-            budget_data = self.memory.load_budgets()
-            budget_data["budgets"] = [
-                b for b in budget_data["budgets"]
-                if b.get("category", "").lower() != budget_cmd["category"].lower()
-            ]
-            budget_data["budgets"].append(new_budget)
-            self.memory.save_budgets(budget_data)
-            return {
-                "message": f"Budget set — {new_budget['category']} · ${new_budget['amount']:.2f}/month.",
-                "status": self.get_status(),
-                "presentation": None,
-            }
-        recurring_cmd = self.detect_recurring_command(user_input)
-        if recurring_cmd:
-            if recurring_cmd.get("list"):
-                schedules = self.recurring.list_schedules()
-                msg = f"{len(schedules)} recurring schedule(s) active." if schedules else "No recurring schedules."
-                return {"message": msg, "status": self.get_status(), "presentation": None}
-            if recurring_cmd.get("cancel"):
-                keyword = user_input.lower().replace("cancel", "").replace("recurring", "").strip()
-                for s in self.recurring.list_schedules():
-                    if keyword in s["description"].lower():
-                        self.recurring.cancel_schedule(s["id"])
-                        self._save_recurring()
-                        return {"message": f"Cancelled recurring: {s['description']}.", "status": self.get_status(), "presentation": None}
-                return {"message": "No matching recurring schedule found.", "status": self.get_status(), "presentation": None}
-            today = _date.today()
-            day = recurring_cmd["day_of_period"]
-            freq = recurring_cmd["frequency"]
-            last_day = _cal.monthrange(today.year, today.month)[1]
-            start = _date(today.year, today.month, min(day, last_day)).isoformat()
-            if start < today.isoformat():
-                m2 = today.month % 12 + 1
-                y2 = today.year if today.month < 12 else today.year + 1
-                last2 = _cal.monthrange(y2, m2)[1]
-                start = _date(y2, m2, min(day, last2)).isoformat()
-            cat = self.categorization.suggest_category(recurring_cmd["description"])
-            category = cat["category"] if cat else "Misc"
-            freq_full = freq + "ly" if not freq.endswith("ly") else freq
-            schedule = self.recurring.create_schedule(
-                description=recurring_cmd["description"],
-                amount=recurring_cmd["amount"],
-                category=category,
-                entry_type=recurring_cmd["entry_type"],
-                frequency=freq_full,
-                day_of_period=day,
-                start_date=start,
-            )
-            self._save_recurring()
-            return {
-                "message": f"Recurring set — {schedule['description']} · ${schedule['amount']:.2f} · {schedule['entry_type']} · {schedule['frequency']} from {schedule['next_date']}.",
-                "status": self.get_status(),
-                "presentation": None,
-            }
-        reconcile_cmd = self.detect_reconcile_command(user_input)
-        if reconcile_cmd:
-            return {
-                "message": "Please use the Reconcile tab in the UI to upload and match bank statements.",
-                "status": self.get_status(),
-                "presentation": None,
-            }
-        ar_ap_cmd = self.detect_ar_ap_command(user_input)
-        if ar_ap_cmd:
-            action = ar_ap_cmd.get("action")
-            if action == "add_receivable":
-                amount = ar_ap_cmd.get("amount")
-                client_vendor = ar_ap_cmd.get("client_vendor")
-                if amount is None or client_vendor is None:
-                    return {
-                        "message": "I need both an amount and a client name to create a receivable. Please specify like: 'Add receivable $500 from ClientName'",
-                        "status": self.get_status(),
-                        "presentation": None,
-                    }
-                cat = self.categorization.suggest_category(client_vendor) if client_vendor else None
-                category = cat["category"] if cat else "Accounts Receivable"
-                due_date = (date.today() + timedelta(days=30)).isoformat()
-                result = self.ar_ap_engine.add_receivable(
-                    client=client_vendor,
-                    amount=amount,
-                    due_date=due_date,
-                    notes=f"Created via voice command: {user_input}"
-                )
-                return {
-                    "message": f"Created receivable for {client_vendor}: ${amount:.2f} due {due_date}",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            elif action == "add_payable":
-                amount = ar_ap_cmd.get("amount")
-                client_vendor = ar_ap_cmd.get("client_vendor")
-                if amount is None or client_vendor is None:
-                    return {
-                        "message": "I need both an amount and a vendor name to create a payable. Please specify like: 'Add payable $300 for VendorName'",
-                        "status": self.get_status(),
-                        "presentation": None,
-                    }
-                cat = self.categorization.suggest_category(client_vendor) if client_vendor else None
-                category = cat["category"] if cat else "Accounts Payable"
-                due_date = (date.today() + timedelta(days=30)).isoformat()
-                result = self.ar_ap_engine.add_payable(
-                    vendor=client_vendor,
-                    amount=amount,
-                    due_date=due_date,
-                    notes=f"Created via voice command: {user_input}"
-                )
-                return {
-                    "message": f"Created payable for {client_vendor}: ${amount:.2f} due {due_date}",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            elif action == "mark_paid":
-                entry_type = ar_ap_cmd.get("entry_type", "receivable")
-                data = self.ar_ap_engine.get_ar_ap()
-                collection = "receivables" if entry_type == "receivable" else "payables"
-                open_entries = [e for e in data[collection] if e["status"] == "open"]
-                if not open_entries:
-                    return {
-                        "message": f"No open {entry_type} entries found to mark as paid.",
-                        "status": self.get_status(),
-                        "presentation": None,
-                    }
-                latest_entry = max(open_entries, key=lambda x: x["issue_date"])
-                paid_date = date.today().isoformat()
-                self.ar_ap_engine.mark_paid(
-                    entry_id=latest_entry["id"],
-                    entry_type=entry_type,
-                    paid_date=paid_date,
-                )
-                description = (
-                    f"Invoice paid: {latest_entry['client_vendor']}"
-                    if entry_type == "receivable"
-                    else f"Bill paid: {latest_entry['client_vendor']}"
-                )
-                self.record_structured_transaction(
-                    date=paid_date,
-                    description=description,
-                    category="Accounts Receivable" if entry_type == "receivable" else "Accounts Payable",
-                    amount=latest_entry["amount"],
-                    entry_type="Income" if entry_type == "receivable" else "Expense",
-                    notes=latest_entry.get("notes", ""),
-                )
-                return {
-                    "message": f"Marked {entry_type} '{latest_entry['client_vendor']}' as paid and posted to ledger.",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            elif action == "list_ar_ap":
-                data = self.ar_ap_engine.get_ar_ap()
-                receivables_count = len(data["receivables"])
-                payables_count = len(data["payables"])
-                overdue_receivables = len([r for r in data["receivables"] if r["days_outstanding"] > 0 and r["status"] == "open"])
-                overdue_payables = len([p for p in data["payables"] if p["days_outstanding"] > 0 and p["status"] == "open"])
-                return {
-                    "message": f"AR/AP Summary: {receivables_count} receivables ({overdue_receivables} overdue), {payables_count} payables ({overdue_payables} overdue)",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            elif action == "get_overdue":
-                overdue = self.ar_ap_engine.get_overdue_items()
-                receivables_count = len(overdue["receivables"])
-                payables_count = len(overdue["payables"])
-                if receivables_count == 0 and payables_count == 0:
-                    return {
-                        "message": "No overdue receivables or payables.",
-                        "status": self.get_status(),
-                        "presentation": None,
-                    }
-                msg_parts = []
-                if receivables_count > 0:
-                    msg_parts.append(f"{receivables_count} overdue receivable(s)")
-                if payables_count > 0:
-                    msg_parts.append(f"{payables_count} overdue payable(s)")
-                return {
-                    "message": f"Overdue items: {', '.join(msg_parts)}",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-        tax_cmd = self.detect_tax_command(user_input)
-        if tax_cmd:
-            action = tax_cmd.get("action")
-            if action == "get_tax_estimate":
-                ledger_rows = self.sheets.read_range(
-                    spreadsheet_id=self.memory.get_current_business()["google_sheet_id"],
-                    range_name="Ledger!A:G"
-                )
-                tax_summary = self.tax_engine.compute_tax_summary(ledger_rows)
-                return {
-                    "message": f"Tax Estimate: Net Income ${tax_summary['net_income']:.2f}, SE Tax ${tax_summary['se_tax']:.2f}, Federal Tax ${tax_summary['federal_tax']:.2f}, Total Tax ${tax_summary['total_tax']:.2f}",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            elif action == "get_tax_deadlines":
-                current_year = date.today().year
-                deadlines = self.tax_engine.get_irs_deadlines(current_year)
-                deadline_strs = [f"{d['description']}: {d['deadline']}" for d in deadlines]
-                return {
-                    "message": f"Tax Deadlines: {', '.join(deadline_strs)}",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-            elif action == "get_tax_alerts":
-                alerts = self.tax_engine.get_upcoming_alerts()
-                if not alerts:
-                    return {
-                        "message": "No upcoming tax deadlines in the next 30 days.",
-                        "status": self.get_status(),
-                        "presentation": None,
-                    }
-                alert_strs = [f"{a['description']}: {a['deadline']} ({a['days_until']} days)" for a in alerts]
-                return {
-                    "message": f"Upcoming Tax Alerts: {', '.join(alert_strs)}",
-                    "status": self.get_status(),
-                    "presentation": None,
-                }
-        cmd_lower = user_input.lower()
-        if any(phrase in cmd_lower for phrase in ["what industry", "what is the industry", "what legal structure", "what accounting basis", "show profile", "business profile"]):
-            biz_key = self.memory.current_business_key
-            profile = self.memory.load_business_profile(biz_key)
-            fields = {
-                "Business Name": profile.get("business_name", ""),
-                "Legal Structure": profile.get("legal_structure", "") or "Not set",
-                "Industry": profile.get("industry", "") or "Not set",
-                "Business Model": profile.get("business_model", "") or "Not set",
-                "Accounting Basis": profile.get("accounting_basis", ""),
-                "Inventory Method": profile.get("inventory_method", ""),
-                "State": profile.get("state", ""),
-                "EIN": profile.get("federal_ein", "") or "Not set",
-            }
-            lines = "\n".join(f"  {k}: {v}" for k, v in fields.items())
-            return {
-                "message": f"Business profile for {profile.get('business_name', 'Unknown Business')}:\n{lines}",
-                "status": self.get_status(),
-                "presentation": None,
-            }
-        elif "set accounting basis" in cmd_lower or "change accounting basis" in cmd_lower:
-            basis = "accrual" if "accrual" in cmd_lower else "cash"
-            self.memory.update_business_profile(self.memory.current_business_key, {"accounting_basis": basis})
-            return {"message": f"Accounting basis updated to {basis}.", "status": self.get_status(), "presentation": None}
-        elif "set industry" in cmd_lower or "change industry" in cmd_lower:
-            industries = ["e_commerce", "import_export", "professional_services", "retail",
-                "construction", "healthcare", "content_creator", "manufacturing"]
-            matched = next((i for i in industries if i.replace("_", " ") in cmd_lower or i in cmd_lower), None)
-            if matched:
-                self.memory.update_business_profile(self.memory.current_business_key, {"industry": matched})
-                return {"message": f"Industry set to {matched}.", "status": self.get_status(), "presentation": None}
-            else:
-                return {"message": "Industry not recognized. Valid options: e_commerce, import_export, professional_services, retail, construction, healthcare, content_creator, manufacturing.", "status": self.get_status(), "presentation": None}
-        elif ("set legal structure" in cmd_lower or "change legal structure" in cmd_lower or
-              (("s-corp" in cmd_lower or "s corp" in cmd_lower) and ("set" in cmd_lower or "change" in cmd_lower or "elect" in cmd_lower))):
-            structures = {"single_member_llc": ["single member", "single-member"],
-                "multi_member_llc": ["multi member", "multi-member"],
-                "s_corp": ["s-corp", "s corp", "scorp"],
-                "partnership": ["partnership"],
-                "sole_proprietor": ["sole proprietor"]}
-            matched_struct = None
-            for key, aliases in structures.items():
-                if any(a in cmd_lower for a in aliases):
-                    matched_struct = key
-                    break
-            if matched_struct:
-                self.memory.update_business_profile(self.memory.current_business_key, {"legal_structure": matched_struct})
-                return {"message": f"Legal structure updated to {matched_struct}.", "status": self.get_status(), "presentation": None}
-            else:
-                return {"message": "Legal structure not recognized. Valid options: single_member_llc, multi_member_llc, s_corp, partnership, sole_proprietor.", "status": self.get_status(), "presentation": None}
-        message = self.handle_command(user_input)
-        status = self.get_status()
-        conversation = status.get("conversation", [])
-        latest_outcome = conversation[-1].get("outcome", {}) if conversation else {}
-        presentation = self._build_presentation(latest_outcome, status, message)
-        return {
-            "message": message,
-            "status": status,
-            "presentation": presentation,
-        }
-
-    def recalculate_accounts(self) -> dict[str, Any]:
-        profile = self.ensure_business_workspace_assets()
-        workbook = self.sheets.ensure_financial_workbook(
-            spreadsheet_id=profile["google_sheet_id"],
-            business_name=profile["business_name"],
-        )
-        dashboard = self.get_dashboard_snapshot()
-        return {
-            "message": (
-                f"I rechecked the workbook for {profile['business_name']}. "
-                f"Transactions: {dashboard['transaction_count']}. "
-                f"Income: ${dashboard['income_total']:.2f}. "
-                f"Expenses: ${dashboard['expense_total']:.2f}. "
-                f"Sheet: {self._sheet_url(profile['google_sheet_id'])}"
-            ),
-            "dashboard": dashboard,
-            "workbook": workbook,
-        }
-
-    @staticmethod
-    def _clean_response_text(text: str) -> str:
-        cleaned = text.replace("**", "").replace("###", "").replace("---", "\n")
-        cleaned = cleaned.replace("•", "-")
-        if cleaned.count("|") > 6:
-            cleaned = re.sub(r"\|\s*[-:]+\s*", "|", cleaned)
-            cleaned = cleaned.replace("|", "\n")
-        cleaned = re.sub(r"\s{2,}", " ", cleaned)
-        cleaned = re.sub(r"\n{3,}", "\n\n", cleaned)
-        cleaned = re.sub(r" +\n", "\n", cleaned)
-        cleaned = re.sub(r"\n +", "\n", cleaned)
-        return cleaned.strip()
-
-    def _build_presentation(self, outcome: dict[str, Any], status: dict[str, Any], message: str) -> dict[str, Any] | None:
-        details = outcome.get("details", {}) if isinstance(outcome, dict) else {}
-        dashboard = status.get("dashboard", {})
-        active_business = status.get("active_business", {})
-        if isinstance(details, dict) and "sheet_url" in details:
-            verification = details.get("verification", {})
-            rows = verification.get("values", []) if isinstance(verification, dict) else []
-            normalized_rows = [self._normalize_row(row) for row in rows if isinstance(row, list)]
-            total = 0.0
-            for row in normalized_rows:
-                total += self._safe_float(row[3])
-            return {
-                "kind": "transaction_result",
-                "title": f"{active_business.get('business_name', 'Business')} Ledger Update",
-                "sheet_url": details.get("sheet_url"),
-                "summary_items": [
-                    {"label": "Rows Written", "value": str(len(normalized_rows))},
-                    {"label": "Verified", "value": "Yes" if verification.get("verified") else "No"},
-                    {"label": "Total Amount", "value": f"${total:.2f}"},
-                ],
-                "table": {
-                    "columns": self.LEDGER_HEADERS,
-                    "rows": normalized_rows,
-                },
-            }
-        if isinstance(details, dict) and "dashboard" in details:
-            dashboard_payload = details["dashboard"]
-            return {
-                "kind": "account_review",
-                "title": f"{active_business.get('business_name', 'Business')} Account Review",
-                "summary_items": [
-                    {"label": "Transactions", "value": str(dashboard_payload.get("transaction_count", 0))},
-                    {"label": "Income", "value": f"${dashboard_payload.get('income_total', 0):.2f}"},
-                    {"label": "Expenses", "value": f"${dashboard_payload.get('expense_total', 0):.2f}"},
-                    {"label": "Flagged", "value": str(dashboard_payload.get("flagged_actions", 0))},
-                ],
-            }
-        if isinstance(details, dict) and details.get("count"):
-            entries = details.get("entries", [])
-            return {
-                "kind": "learning_result",
-                "title": "Knowledge Updated",
-                "summary_items": [
-                    {"label": "Sources Learned", "value": str(details.get("count", 0))},
-                    {"label": "Stored Sources", "value": str(status.get("learned_source_count", 0))},
-                ],
-                "sources": [
-                    {"title": entry.get("title", "Untitled"), "url": entry.get("url", "")}
-                    for entry in entries
-                ],
-            }
-        if dashboard and ("sheet:" in message.lower() or "rechecked the workbook" in message.lower()):
-            return {
-                "kind": "account_review",
-                "title": f"{active_business.get('business_name', 'Business')} Account Review",
-                "summary_items": [
-                    {"label": "Transactions", "value": str(dashboard.get("transaction_count", 0))},
-                    {"label": "Income", "value": f"${dashboard.get('income_total', 0):.2f}"},
-                    {"label": "Expenses", "value": f"${dashboard.get('expense_total', 0):.2f}"},
-                    {"label": "Flagged", "value": str(dashboard.get("flagged_actions", 0))},
-                ],
-            }
-        return None
-
-    def rename_current_business(self, new_name: str) -> dict[str, Any]:
-        profile = self.memory.update_business_profile(
-            self.memory.current_business_key,
-            {"business_name": new_name.strip()},
-        )
-        if profile.get("google_sheet_id"):
-            try:
-                self.sheets.rename_spreadsheet(
-                    spreadsheet_id=profile["google_sheet_id"],
-                    title=f"{profile['business_name']} CPA Ledger",
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.workspace_boot_error = str(exc)
-        if profile.get("google_doc_id"):
-            try:
-                self.docs.rename_document(
-                    document_id=profile["google_doc_id"],
-                    title=f"{profile['business_name']} CPA Notes",
-                )
-            except Exception as exc:  # noqa: BLE001
-                self.workspace_boot_error = str(exc)
-        return profile
-
-    def learn_from_urls(self, urls: list[str], topic: str = "") -> dict[str, Any]:
-        entries = []
-        for url in urls:
-            page = self.knowledge.learn_from_url(url)
-            entry = self.knowledge.make_memory_entry(page, topic=topic)
-            self.memory.record_learned_source(entry)
-            entries.append(entry)
-        return {"count": len(entries), "entries": entries}
+        return _handle_command_with_metadata(user_input, self)
 
     def run(self) -> None:
+        import requests as _requests
         current = self.memory.get_current_business()
         print(f"CPA-Agent ready. Active business: {current['business_name']}")
         print(f"Input mode: {self.input_mode}")
@@ -1191,7 +268,7 @@ class CPAAgent:
                 break
             try:
                 response = self.handle_command(command)
-            except requests.RequestException as exc:
+            except _requests.RequestException as exc:
                 response = f"I hit a network issue: {exc}"
             except Exception as exc:  # noqa: BLE001
                 response = f"I could not complete that safely: {exc}"
