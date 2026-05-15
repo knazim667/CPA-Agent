@@ -7,7 +7,7 @@ from typing import Any
 from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials as UserCredentials
 from google.oauth2.service_account import Credentials
-from google_auth_oauthlib.flow import InstalledAppFlow
+from google_auth_oauthlib.flow import Flow, InstalledAppFlow
 from googleapiclient.discovery import build
 
 
@@ -18,13 +18,13 @@ class GoogleWorkspaceAuth:
         "https://www.googleapis.com/auth/spreadsheets",
     )
 
-    def __init__(self, credentials_path: str | None = None) -> None:
+    def __init__(self, credentials_path: str | None = None, *, token_path: str | None = None) -> None:
         self.credentials_path = credentials_path or os.getenv("GOOGLE_SERVICE_ACCOUNT_FILE")
         self.oauth_client_path = os.getenv(
             "GOOGLE_OAUTH_CLIENT_SECRET_FILE",
             os.getenv("GOOGLE_OAUTH_CLIENT_FILE", "credentials/google-oauth-client.json"),
         )
-        self.oauth_token_path = os.getenv("GOOGLE_OAUTH_TOKEN_FILE", "credentials/google-token.json")
+        self.oauth_token_path = token_path or os.getenv("GOOGLE_OAUTH_TOKEN_FILE", "credentials/google-token.json")
         self.subject = os.getenv("GOOGLE_WORKSPACE_USER")
         self._credentials: Credentials | UserCredentials | None = None
         self._services: dict[str, Any] = {}
@@ -100,6 +100,61 @@ class GoogleWorkspaceAuth:
             os.makedirs(token_dir, exist_ok=True)
         with open(token_path, "w", encoding="utf-8") as handle:
             handle.write(credentials.to_json())
+
+    @staticmethod
+    def build_web_auth_url(
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        state: str,
+        scopes: list[str],
+    ) -> str:
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [redirect_uri],
+                }
+            },
+            scopes=scopes,
+            redirect_uri=redirect_uri,
+        )
+        auth_url, _ = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",
+            state=state,
+        )
+        return auth_url
+
+    @staticmethod
+    def exchange_web_auth_code(
+        client_id: str,
+        client_secret: str,
+        redirect_uri: str,
+        state: str,
+        code: str,
+        scopes: list[str],
+    ) -> "object":
+        flow = Flow.from_client_config(
+            {
+                "web": {
+                    "client_id": client_id,
+                    "client_secret": client_secret,
+                    "auth_uri": "https://accounts.google.com/o/oauth2/auth",
+                    "token_uri": "https://oauth2.googleapis.com/token",
+                    "redirect_uris": [redirect_uri],
+                }
+            },
+            scopes=scopes,
+            redirect_uri=redirect_uri,
+            state=state,
+        )
+        flow.fetch_token(code=code)
+        return flow.credentials
 
     def reset_service(self, name: str) -> None:
         self._services.pop(name, None)

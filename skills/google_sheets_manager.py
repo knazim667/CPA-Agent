@@ -20,6 +20,14 @@ class GoogleSheetsManager:
         self.auth = GoogleWorkspaceAuth(self.credentials_path)
         self._service = None
 
+    @classmethod
+    def from_token_path(cls, token_path: str) -> "GoogleSheetsManager":
+        instance = cls.__new__(cls)
+        instance.credentials_path = None
+        instance.auth = GoogleWorkspaceAuth(token_path=token_path)
+        instance._service = None
+        return instance
+
     def _get_service(self):
         if self._service is None:
             self._service = self.auth.build_service("sheets", "v4")
@@ -155,12 +163,10 @@ class GoogleSheetsManager:
         return spreadsheet
 
     def read_range(self, spreadsheet_id: str, range_name: str) -> list[list[str]]:
-        response = (
-            self._execute(
-                lambda service: service.spreadsheets().values().get(
-                    spreadsheetId=spreadsheet_id,
-                    range=range_name,
-                )
+        response = self._execute(
+            lambda service: service.spreadsheets().values().get(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
             )
         )
         return response.get("values", [])
@@ -271,14 +277,12 @@ class GoogleSheetsManager:
         range_name: str,
         values: list[list[Any]],
     ) -> dict[str, Any]:
-        return (
-            self._execute(
-                lambda service: service.spreadsheets().values().update(
-                    spreadsheetId=spreadsheet_id,
-                    range=range_name,
-                    valueInputOption="USER_ENTERED",
-                    body={"values": values},
-                )
+        return self._execute(
+            lambda service: service.spreadsheets().values().update(
+                spreadsheetId=spreadsheet_id,
+                range=range_name,
+                valueInputOption="USER_ENTERED",
+                body={"values": values},
             )
         )
 
