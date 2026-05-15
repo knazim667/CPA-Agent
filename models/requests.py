@@ -118,3 +118,19 @@ class ReconcileResolveRequest(BaseModel):
     description: str
     amount: float
     action: str
+
+
+class SignupRequest(BaseModel):
+    username: str
+    email: str
+    password: str
+    confirm_password: str
+
+
+class OnboardingBusinessRequest(BaseModel):
+    business_name: str
+    legal_structure: str
+    industry: str
+    ein: str = ""
+    state: str = ""
+    accounting_basis: str = "cash"
