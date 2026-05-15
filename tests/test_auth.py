@@ -70,3 +70,16 @@ def test_duplicate_username_raises(um):
     um.create_user("dup", "dup@example.com", "p1111111", "owner")
     with pytest.raises((_sqlite3.IntegrityError, ValueError)):
         um.create_user("dup", "dup2@example.com", "p1111111", "employee")
+
+
+def test_link_business_stores_key(um):
+    user = um.create_user("charlie", "c@example.com", "password1", "owner")
+    um.link_business(user["id"], "nazam_llc")
+    assert "nazam_llc" in um.get_user_businesses(user["id"])
+
+
+def test_link_business_duplicate_is_idempotent(um):
+    user = um.create_user("diana", "d@example.com", "password1", "owner")
+    um.link_business(user["id"], "biz1")
+    um.link_business(user["id"], "biz1")  # second call must not raise
+    assert um.get_user_businesses(user["id"]).count("biz1") == 1

@@ -164,6 +164,14 @@ class UserManager:
             ).fetchall()
         return [r[0] for r in rows]
 
+    def link_business(self, user_id: int, business_key: str) -> None:
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT OR IGNORE INTO user_businesses (user_id, business_key) VALUES (?, ?)",
+                (user_id, business_key),
+            )
+            conn.commit()
+
     def can_access_business(self, user: dict[str, Any], business_key: str) -> bool:
         if user["role"] == "owner":
             return True
