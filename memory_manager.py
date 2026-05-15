@@ -6,19 +6,16 @@ import time
 from pathlib import Path
 from typing import Any
 
-PROFILE_DEFAULTS: dict = {
-    "legal_structure": "",        # single_member_llc | multi_member_llc | s_corp | partnership | sole_proprietor
-    "industry": "",               # e_commerce | import_export | professional_services | retail | construction | healthcare | content_creator | manufacturing | other
-    "business_model": "",         # product_based | service_based | mixed
-    "fiscal_year_start": "01-01",
-    "accounting_basis": "cash",   # cash | accrual
-    "inventory_method": "none",   # fifo | lifo | wac | none
-    "operating_states": [],
-    "address": {"street": "", "city": "", "state": "", "zip": "", "country": "US"},
-    "contact": {"phone": "", "email": ""},
-    "owners": [],
-    "onboarding_complete": False,
-}
+from memory_store import (
+    PROFILE_DEFAULTS,
+    load_json,
+    save_json,
+    record_skill_outcome as _record_skill_outcome,
+    record_custom_rule as _record_custom_rule,
+    record_audit_entry as _record_audit_entry,
+    record_learned_source as _record_learned_source,
+    migrate_business_profiles as _migrate_business_profiles,
+)
 
 
 class MemoryManager:
@@ -196,150 +193,67 @@ class MemoryManager:
         self.short_term_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
 
     def record_skill_outcome(self, action_name: str, success: bool, details: dict[str, Any]) -> None:
-        with self.skill_memory_path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-
-        record = {
-            "timestamp": time.time(),
-            "business": self.current_business_key,
-            "action_name": action_name,
-            "success": success,
-            "details": details,
-        }
-        payload.setdefault("history", []).append(record)
-
-        bucket = "success_patterns" if success else "failure_patterns"
-        payload.setdefault(bucket, []).append(
-            {
-                "action_name": action_name,
-                "business": self.current_business_key,
-                "timestamp": record["timestamp"],
-            }
-        )
-        self.skill_memory_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _record_skill_outcome(self.skill_memory_path, self.current_business_key, action_name, success, details)
 
     def record_custom_rule(self, user_input: str, destination_path: Path) -> None:
-        if destination_path.exists():
-            with destination_path.open("r", encoding="utf-8") as handle:
-                payload = json.load(handle)
-        else:
-            payload = {"rules": []}
-
-        payload.setdefault("rules", []).append(
-            {
-                "timestamp": time.time(),
-                "business": self.current_business_key,
-                "rule": user_input.strip(),
-            }
-        )
-        destination_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _record_custom_rule(destination_path, self.current_business_key, user_input)
 
     def record_transaction_audit(self, entry: dict[str, Any]) -> None:
-        with self.transaction_audit_path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        payload.setdefault("entries", []).append(entry)
-        self.transaction_audit_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _record_audit_entry(self.transaction_audit_path, entry)
 
     def load_transaction_audit(self) -> dict[str, Any]:
-        with self.transaction_audit_path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self.transaction_audit_path, {"entries": []})
 
     def record_learned_source(self, entry: dict[str, Any]) -> None:
-        with self.learned_sources_path.open("r", encoding="utf-8") as handle:
-            payload = json.load(handle)
-        payload.setdefault("entries", []).append(entry)
-        self.learned_sources_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        _record_learned_source(self.learned_sources_path, entry)
 
     def load_learned_sources(self) -> dict[str, Any]:
-        with self.learned_sources_path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self.learned_sources_path, {"entries": []})
 
     def _category_rules_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "category_rules.json"
 
     def load_category_rules(self) -> dict[str, Any]:
-        path = self._category_rules_path()
-        if not path.exists():
-            return {"rules": []}
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self._category_rules_path(), {"rules": []})
 
     def save_category_rules(self, data: dict[str, Any]) -> None:
-        path = self._category_rules_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        save_json(self._category_rules_path(), data)
 
     def _recurring_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "recurring.json"
 
     def load_recurring(self) -> dict[str, Any]:
-        path = self._recurring_path()
-        if not path.exists():
-            return {"schedules": []}
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self._recurring_path(), {"schedules": []})
 
     def save_recurring(self, data: dict[str, Any]) -> None:
-        path = self._recurring_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        save_json(self._recurring_path(), data)
 
     def _budgets_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "budgets.json"
 
     def load_budgets(self) -> dict[str, Any]:
-        path = self._budgets_path()
-        if not path.exists():
-            return {"budgets": []}
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self._budgets_path(), {"budgets": []})
 
     def save_budgets(self, data: dict[str, Any]) -> None:
-        path = self._budgets_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        save_json(self._budgets_path(), data)
 
     def _m1_state_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "m1_state.json"
 
     def load_m1_state(self) -> dict[str, Any]:
-        path = self._m1_state_path()
-        if not path.exists():
-            return {}
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self._m1_state_path(), {})
 
     def save_m1_state(self, data: dict[str, Any]) -> None:
-        path = self._m1_state_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        save_json(self._m1_state_path(), data)
 
     def _m1_category_map_path(self) -> Path:
         return self.long_term_dir / self.current_business_key / "m1_category_map.json"
 
     def load_m1_category_map(self) -> dict[str, str]:
-        path = self._m1_category_map_path()
-        if not path.exists():
-            return {}
-        with path.open("r", encoding="utf-8") as handle:
-            return json.load(handle)
+        return load_json(self._m1_category_map_path(), {})
 
     def save_m1_category_map(self, data: dict[str, str]) -> None:
-        path = self._m1_category_map_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        save_json(self._m1_category_map_path(), data)
 
     def migrate_business_profiles(self) -> None:
-        """Add missing onboarding fields to existing config.json files."""
-        for key in self.list_business_keys():
-            try:
-                profile = self.load_business_profile(key)
-                changed = False
-                for field, default in PROFILE_DEFAULTS.items():
-                    if field not in profile:
-                        profile[field] = copy.deepcopy(default)
-                        changed = True
-                if changed:
-                    self.save_business_profile(key, profile)
-            except (FileNotFoundError, json.JSONDecodeError):
-                pass
+        _migrate_business_profiles(self.list_business_keys, self.load_business_profile, self.save_business_profile)

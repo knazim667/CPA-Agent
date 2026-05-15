@@ -1,52 +1,20 @@
-"""
-Perpetual inventory engine for LLC businesses selling physical goods.
+"""Perpetual inventory engine: FIFO, LIFO, and WAC costing for LLC businesses.
 
-Tracks individual purchase lots so COGS and balance-sheet value can be computed
-under FIFO, LIFO, or Weighted Average Cost (WAC) at any point in time.
-
-IRS / GAAP rules encoded here:
-  - Landed cost (IRC §471): inventory cost includes freight, duties, and insurance
-  - Two-entry sale rule: every sale creates a revenue entry AND a COGS entry
-  - Lower of Cost or Market (LCM): ASC 330 — write down if market < book cost
-  - LIFO reserve: FIFO value − LIFO value, required balance-sheet disclosure
-  - LIFO is not permitted under IFRS (only GAAP)
-  - Election: inventory method is chosen on the first tax return and requires IRS
-    approval (Form 970) to change — ask the business owner on setup
+Landed cost per IRC §471; every sale requires two journal entries (revenue + COGS).
+Supports LCM write-downs (ASC 330) and LIFO reserve disclosure.
+LIFO is GAAP-only — not permitted under IFRS.
 """
 from __future__ import annotations
 
 import uuid
-from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
+from skills.inventory_models import InventoryLot, deplete_lots as _deplete_lots
 
-# ── Lot dataclass ─────────────────────────────────────────────────────────────
-
-@dataclass
-class InventoryLot:
-    lot_id: str
-    purchase_date: str          # YYYY-MM-DD, used for FIFO/LIFO ordering
-    units: float                # original units purchased in this lot
-    unit_landed_cost: float     # per-unit landed cost (base + freight + duties + ins)
-    remaining_units: float      # decremented as units are sold
-
-
-# ── Engine ────────────────────────────────────────────────────────────────────
 
 class InventoryEngine:
-    """
-    Perpetual inventory tracking with FIFO, LIFO, and WAC costing.
-
-    Perpetual method: every purchase and sale updates lot balances immediately,
-    giving real-time COGS and on-hand inventory value at any moment.
-
-    Usage:
-        engine = InventoryEngine(default_method="fifo")
-        engine.add_purchase(100, unit_cost=50.0, freight=200)
-        engine.record_sale(40, sale_price_per_unit=80.0)
-        print(engine.get_summary())
-    """
+    """Perpetual inventory tracking with FIFO, LIFO, and WAC costing."""
 
     VALID_METHODS = ("fifo", "lifo", "wac")
 
@@ -54,12 +22,10 @@ class InventoryEngine:
         if default_method not in self.VALID_METHODS:
             raise ValueError(f"method must be one of {self.VALID_METHODS}")
         self.default_method = default_method
-        self._lots: list[InventoryLot] = []               # oldest → newest
+        self._lots: list[InventoryLot] = []
         self._sales_history: list[dict[str, Any]] = []
         self._purchase_history: list[dict[str, Any]] = []
         self._impairments: list[dict[str, Any]] = []
-
-    # ── Public API ─────────────────────────────────────────────────────────────
 
     def add_purchase(
         self,
@@ -70,17 +36,10 @@ class InventoryEngine:
         insurance: float = 0.0,
         purchase_date: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Record an inventory purchase and compute the fully-landed unit cost.
+        """Record a purchase and compute landed unit cost (IRC §471).
 
-        Landed cost per unit = (base_cost × units + freight + duties + insurance) / units
-
-        This is required by IRC §471: inventory cost must include all charges
-        incidental to acquiring the goods (shipping, customs, insurance).
-
-        Journal entry:
-            DR 1200 Inventory    (full landed cost)
-            CR 1010 Checking     (full landed cost)
+        Landed cost = (base_cost × units + freight + duties + insurance) / units.
+        Journal: DR 1200 Inventory / CR 1010 Checking.
         """
         if units <= 0:
             raise ValueError("units must be positive")
@@ -121,14 +80,10 @@ class InventoryEngine:
         sale_price_per_unit: float,
         method: str | None = None,
     ) -> dict[str, Any]:
-        """
-        Record a sale, charge COGS, and return both required journal entries.
+        """Record a sale, charge COGS under the chosen costing method.
 
-        Two entries are always required (GAAP):
-          Entry 1 — Revenue:  DR 1010 Cash / CR 4000 Sales Revenue
-          Entry 2 — COGS:     DR 5000 COGS / CR 1200 Inventory
-
-        Raises ValueError if more units are requested than are on hand.
+        GAAP requires two entries: Revenue (DR Cash / CR Sales) and COGS (DR COGS / CR Inventory).
+        Raises ValueError if units_sold exceeds on-hand quantity.
         """
         method = (method or self.default_method).lower()
         if method not in self.VALID_METHODS:
@@ -179,18 +134,11 @@ class InventoryEngine:
         item_description: str,
         market_value_total: float,
     ) -> dict[str, Any] | None:
-        """
-        Apply the Lower of Cost or Market (LCM) rule per ASC 330.
+        """Apply LCM rule (ASC 330): write down if market value < book cost.
 
-        If total market value of on-hand inventory < recorded book cost,
-        write the difference down immediately as an expense.
-
-        Note: GAAP prohibits reversing a write-down if market value recovers.
-        IFRS (IAS 2) allows reversal — flag this if the business reports under IFRS.
-
-        Journal entry (write-down only — returns None if no impairment):
-            DR 7900 Inventory Write-Down Expense
-            CR 1200 Inventory
+        GAAP prohibits reversal if market value later recovers.
+        Returns None if no write-down is needed.
+        Journal: DR 7900 Inventory Write-Down Expense / CR 1200 Inventory.
         """
         book_cost = self.get_inventory_value()
         if market_value_total >= book_cost:
@@ -198,7 +146,6 @@ class InventoryEngine:
 
         write_down = round(book_cost - market_value_total, 2)
 
-        # Reduce each lot's unit cost proportionally so future COGS reflects lower value
         if book_cost > 0:
             reduction_factor = market_value_total / book_cost
             for lot in self._lots:
@@ -224,8 +171,6 @@ class InventoryEngine:
         method = (method or self.default_method).lower()
         if method == "wac":
             return self._wac_inventory_value()
-        # FIFO and LIFO both use actual remaining lot balances (lot state already
-        # reflects which units were depleted during sales)
         return round(sum(l.remaining_units * l.unit_landed_cost for l in self._lots), 2)
 
     def get_cogs_for_period(self, method: str | None = None) -> float:
@@ -237,16 +182,10 @@ class InventoryEngine:
         return round(sum(l.remaining_units for l in self._lots), 6)
 
     def get_lifo_reserve(self) -> float:
-        """
-        LIFO reserve = FIFO inventory value − LIFO inventory value.
+        """LIFO reserve = FIFO inventory value − LIFO inventory value.
 
         Required balance-sheet disclosure when using LIFO (GAAP only).
-        A positive reserve is normal in inflationary periods: it means LIFO gives
-        a lower inventory figure because the cheapest (oldest) stock remains on the books.
-
-        Computed by replaying all historical sales against fresh lot copies under
-        both FIFO and LIFO, then comparing the resulting on-hand values. This gives
-        the correct reserve even after partial lot depletion.
+        Computed by replaying all historical sales against fresh lot copies.
         """
         total_sold = sum(r["units_sold"] for r in self._sales_history)
         if total_sold == 0 or not self._lots:
@@ -259,17 +198,15 @@ class InventoryEngine:
                     purchase_date=l.purchase_date,
                     units=l.units,
                     unit_landed_cost=l.unit_landed_cost,
-                    remaining_units=l.units,   # reset to original quantity
+                    remaining_units=l.units,
                 )
                 for l in self._lots
             ]
 
-        # Simulate FIFO depletion (oldest first)
         fifo_copy = fresh_lots()
         _deplete_lots(total_sold, fifo_copy)
         fifo_val = sum(l.remaining_units * l.unit_landed_cost for l in fifo_copy)
 
-        # Simulate LIFO depletion (newest first)
         lifo_copy = fresh_lots()
         _deplete_lots(total_sold, list(reversed(lifo_copy)))
         lifo_val = sum(l.remaining_units * l.unit_landed_cost for l in lifo_copy)
@@ -293,31 +230,19 @@ class InventoryEngine:
             "total_impairment_amount": round(sum(r["write_down_amount"] for r in self._impairments), 2),
         }
 
-    # ── Private: COGS charging methods ───────────────────────────────────────
-
     def _charge_fifo(self, units_sold: float) -> float:
-        """Deplete oldest lots first (smallest purchase_date index = oldest)."""
         return _deplete_lots(units_sold, self._lots)
 
     def _charge_lifo(self, units_sold: float) -> float:
-        """Deplete newest lots first."""
         return _deplete_lots(units_sold, list(reversed(self._lots)))
 
     def _charge_wac(self, units_sold: float) -> float:
-        """
-        Charge COGS at the current weighted average cost per unit.
-
-        WAC recomputes the average after every purchase, so the cost per unit
-        smooths out price fluctuations. After computing COGS, deplete lots
-        oldest-first to keep remaining_units consistent.
-        """
         total_units = self.units_on_hand()
         total_cost = sum(l.remaining_units * l.unit_landed_cost for l in self._lots)
         if total_units == 0:
             return 0.0
         wac = total_cost / total_units
         cogs = units_sold * wac
-        # Deplete physical units oldest-first (WAC doesn't care about lot order for cost)
         _deplete_lots(units_sold, self._lots)
         return cogs
 
@@ -326,27 +251,4 @@ class InventoryEngine:
         if total_units == 0:
             return 0.0
         total_cost = sum(l.remaining_units * l.unit_landed_cost for l in self._lots)
-        return round(total_cost, 2)   # WAC value = same as sum of lot values
-
-
-# ── Module-level helpers ──────────────────────────────────────────────────────
-
-def _deplete_lots(units_needed: float, lots: list[InventoryLot]) -> float:
-    """
-    Consume `units_needed` from `lots` in order, returning total COGS.
-    Mutates remaining_units on each lot in place.
-    """
-    cogs = 0.0
-    remaining = units_needed
-    for lot in lots:
-        if remaining <= 0:
-            break
-        if lot.remaining_units == 0:
-            continue
-        take = min(remaining, lot.remaining_units)
-        cogs += take * lot.unit_landed_cost
-        lot.remaining_units = round(lot.remaining_units - take, 6)
-        remaining = round(remaining - take, 6)
-    return cogs
-
-
+        return round(total_cost, 2)

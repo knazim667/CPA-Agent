@@ -1,84 +1,17 @@
-"""
-MACRS depreciation engine for LLC assets.
-
-Computes annual depreciation schedules, Section 179 elections, bonus depreciation,
-mid-quarter convention detection, and Section 1245/1250 recapture on disposal.
-
-Election order (IRS-prescribed):
-  1. Section 179 first (elected expensing up to the annual limit)
-  2. Bonus depreciation on remaining basis (percentage varies by tax year)
-  3. MACRS on whatever basis remains after 179 and bonus
-"""
+"""MACRS depreciation engine for LLC assets — Section 179, bonus, and disposal."""
 from __future__ import annotations
 
-from dataclasses import dataclass
 from typing import Any
 
-
-# ── IRS Constants ─────────────────────────────────────────────────────────────
-
-SECTION_179_LIMITS: dict[int, int] = {
-    2024: 1_220_000,
-    2025: 1_250_000,
-    2026: 1_250_000,   # placeholder — update when IRS publishes Rev. Proc.
-}
-
-# First-year bonus depreciation percentages by tax year
-BONUS_DEPRECIATION_RATES: dict[int, float] = {
-    2022: 1.00,
-    2023: 0.80,
-    2024: 0.60,
-    2025: 0.40,
-    2026: 0.20,
-    2027: 0.00,
-}
-
-# ── MACRS GDS Recovery Period Table ─────────────────────────────────────────
-
-RECOVERY_PERIODS: dict[str, float] = {
-    "computer":              5.0,
-    "vehicle":               5.0,
-    "office_furniture":      7.0,
-    "equipment":             7.0,
-    "land_improvement":     15.0,
-    "residential_rental":   27.5,
-    "commercial_building":  39.0,
-}
-
-# ── Pre-computed MACRS Rate Tables (half-year convention) ─────────────────────
-#
-# 5-year and 7-year: 200% DB switching to SL (IRS Rev. Proc. 87-57, Table A-1)
-# 15-year: 150% DB switching to SL (IRS Rev. Proc. 87-57, Table A-1)
-# 27.5-year and 39-year: straight-line, approximated as uniform annual rate
-# (Month-of-placement mid-month convention handled via first-year fraction)
-
-_MACRS_HALF_YEAR: dict[float, list[float]] = {
-    5.0: [0.2000, 0.3200, 0.1920, 0.1152, 0.1152, 0.0576],
-    7.0: [0.1429, 0.2449, 0.1749, 0.1249, 0.0893, 0.0892, 0.0893, 0.0446],
-    15.0: [
-        0.0500, 0.0950, 0.0855, 0.0770, 0.0693, 0.0623, 0.0590, 0.0590,
-        0.0591, 0.0590, 0.0590, 0.0591, 0.0590, 0.0590, 0.0591, 0.0295,
-    ],
-}
-
-# Straight-line rates for real property (full-year; first year uses mid-month fraction)
-_SL_ANNUAL_RATE: dict[float, float] = {
-    27.5: 1 / 27.5,   # ≈ 3.636%
-    39.0: 1 / 39.0,   # ≈ 2.564%
-}
-
-# Straight-line recovery years (real property depreciates one extra year due to partial first/last)
-_SL_YEARS: dict[float, int] = {
-    27.5: 28,
-    39.0: 40,
-}
-
-
-@dataclass
-class DepreciationYear:
-    year_number: int          # 1 = first year asset in service
-    deduction: float          # depreciation deduction for this year
-    remaining_basis: float    # book/tax basis going into the next year
+from skills.depreciation_constants import (
+    BONUS_DEPRECIATION_RATES, MACRS_HALF_YEAR, RECOVERY_PERIODS, SECTION_179_LIMITS,
+    SL_ANNUAL_RATE, SL_YEARS, DepreciationYear,
+    apply_rates as _apply_rates,
+    compute_sl_schedule as _compute_sl_schedule,
+    mid_quarter_rates as _mid_quarter_rates,
+    disposal_journal_entries as _disposal_journal_entries,
+    disposal_tax_note as _disposal_tax_note,
+)
 
 
 class DepreciationEngine:
@@ -114,8 +47,8 @@ class DepreciationEngine:
                 f"Valid types: {list(RECOVERY_PERIODS.keys())}"
             )
 
-        if recovery in _MACRS_HALF_YEAR:
-            rates = list(_MACRS_HALF_YEAR[recovery])
+        if recovery in MACRS_HALF_YEAR:
+            rates = list(MACRS_HALF_YEAR[recovery])
             if mid_quarter_convention and mid_quarter_quarter in (1, 2, 3, 4):
                 rates = _mid_quarter_rates(recovery, mid_quarter_quarter)
             return _apply_rates(cost, rates, year_placed_in_service)
@@ -299,119 +232,3 @@ class DepreciationEngine:
             "effective_first_year_rate": round(total_first_year / cost, 4) if cost > 0 else 0.0,
         }
 
-
-# ── Private helpers ───────────────────────────────────────────────────────────
-
-def _apply_rates(
-    cost: float, rates: list[float], base_year: int
-) -> list[dict[str, Any]]:
-    """Convert a pre-computed rate table into a year-by-year schedule."""
-    schedule = []
-    remaining = cost
-    for i, rate in enumerate(rates):
-        deduction = round(cost * rate, 2)
-        deduction = min(deduction, remaining)   # rounding guard
-        remaining = round(remaining - deduction, 2)
-        schedule.append({
-            "year_number": i + 1,
-            "tax_year": base_year + i,
-            "deduction": deduction,
-            "remaining_basis": remaining,
-        })
-    return schedule
-
-
-def _compute_sl_schedule(
-    cost: float,
-    recovery_years: float,
-    base_year: int,
-    month_placed: int,
-) -> list[dict[str, Any]]:
-    """Straight-line mid-month convention for real property (27.5 / 39 year)."""
-    annual_rate = _SL_ANNUAL_RATE[recovery_years]
-    full_year_deduction = round(cost * annual_rate, 2)
-    # First year: fraction = (12 - month_placed + 0.5) / 12
-    first_year_fraction = (12 - month_placed + 0.5) / 12
-    first_deduction = round(cost * annual_rate * first_year_fraction, 2)
-    last_deduction = round(full_year_deduction - first_deduction + full_year_deduction * ((1 + first_year_fraction) / 1 - 1), 2)
-
-    # Simplify: last year gets whatever basis remains
-    total_years = _SL_YEARS[recovery_years]
-    schedule = []
-    remaining = cost
-
-    for i in range(total_years):
-        if i == 0:
-            d = first_deduction
-        elif i == total_years - 1:
-            d = remaining   # mop up remaining basis
-        else:
-            d = min(full_year_deduction, remaining)
-
-        d = round(min(d, remaining), 2)
-        remaining = round(remaining - d, 2)
-        schedule.append({
-            "year_number": i + 1,
-            "tax_year": base_year + i,
-            "deduction": d,
-            "remaining_basis": remaining,
-        })
-        if remaining <= 0:
-            break
-
-    return schedule
-
-
-def _mid_quarter_rates(recovery_years: float, quarter: int) -> list[float]:
-    """
-    Return approximate mid-quarter convention rates for 5-year or 7-year property.
-    IRS Rev. Proc. 87-57 Tables B and C.  Quarter = 1–4 for the quarter placed in service.
-    """
-    # Source: IRS Publication 946 Table A-3 (5-year) and A-4 (7-year)
-    _MQ_5YR: dict[int, list[float]] = {
-        1: [0.35, 0.26, 0.156, 0.1116, 0.1116, 0.0558],
-        2: [0.25, 0.30, 0.18, 0.1080, 0.1080, 0.0540],
-        3: [0.15, 0.34, 0.204, 0.1224, 0.1224, 0.0612],
-        4: [0.05, 0.38, 0.228, 0.1368, 0.1368, 0.0684],
-    }
-    _MQ_7YR: dict[int, list[float]] = {
-        1: [0.25, 0.2143, 0.1531, 0.1093, 0.0875, 0.0875, 0.0875, 0.0459],
-        2: [0.1786, 0.2347, 0.1676, 0.1197, 0.0940, 0.0940, 0.0940, 0.0174],
-        3: [0.1071, 0.2552, 0.1823, 0.1302, 0.0929, 0.0892, 0.0893, 0.0538],
-        4: [0.0357, 0.2755, 0.1969, 0.1406, 0.1004, 0.0893, 0.0893, 0.0723],
-    }
-    if recovery_years == 5.0:
-        return _MQ_5YR.get(quarter, _MACRS_HALF_YEAR[5.0])
-    if recovery_years == 7.0:
-        return _MQ_7YR.get(quarter, _MACRS_HALF_YEAR[7.0])
-    return list(_MACRS_HALF_YEAR.get(recovery_years, []))
-
-
-def _disposal_journal_entries(
-    original_cost: float,
-    accum_dep: float,
-    proceeds: float,
-    gain_loss: float,
-) -> list[dict[str, Any]]:
-    """Build the journal entries for asset retirement/sale."""
-    entries = [
-        {"debit":  {"account": 1010, "name": "Checking Account",  "amount": round(proceeds, 2)}},
-        {"debit":  {"account": 1510, "name": "Accumulated Depreciation", "amount": round(accum_dep, 2)}},
-        {"credit": {"account": 1500, "name": "Equipment (Asset)",  "amount": round(original_cost, 2)}},
-    ]
-    if gain_loss > 0:
-        entries.append({"credit": {"account": 4500, "name": "Gain on Asset Sale (Other Income)", "amount": round(gain_loss, 2)}})
-    elif gain_loss < 0:
-        entries.append({"debit": {"account": 7900, "name": "Loss on Asset Disposal (Other Expense)", "amount": round(abs(gain_loss), 2)}})
-    return entries
-
-
-def _disposal_tax_note(is_loss: bool, recaptured: float, sec_1231: float) -> str:
-    if is_loss:
-        return "Section 1231 loss — fully deductible as ordinary loss on Form 4797."
-    parts = []
-    if recaptured > 0:
-        parts.append(f"${recaptured:,.2f} ordinary income (Section 1245 recapture)")
-    if sec_1231 > 0:
-        parts.append(f"${sec_1231:,.2f} Section 1231 gain (long-term capital gain if >1-year holding)")
-    return "Form 4797 required. " + "; ".join(parts) + "."
