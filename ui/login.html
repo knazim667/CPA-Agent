@@ -16,6 +16,9 @@
     button{width:100%;background:#6366f1;color:#fff;border:none;border-radius:8px;padding:.75rem;font-size:1rem;font-weight:600;cursor:pointer}
     button:hover{background:#4f46e5}
     #error{color:#f87171;font-size:.85rem;margin-top:.75rem;text-align:center;min-height:1.2em}
+    .alt-link{text-align:center;margin-top:1.25rem;font-size:.875rem;color:#94a3b8}
+    .alt-link a{color:#6366f1;text-decoration:none}
+    .alt-link a:hover{text-decoration:underline}
   </style>
 </head>
 <body>
@@ -30,6 +33,7 @@
     <button type="submit">Sign In</button>
     <p id="error"></p>
   </form>
+  <p class="alt-link">Don't have an account? <a href="/signup">Sign up</a></p>
 </div>
 <script>
 document.getElementById('login-form').addEventListener('submit', async function(e) {
