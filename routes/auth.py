@@ -10,7 +10,7 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 from auth import get_current_user, require_owner, require_owner_or_bookkeeper
 from models.requests import (
     BusinessSwitchRequest, CreateUserRequest, LoginRequest,
-    ModelModeRequest, ProfileUpdateRequest, ProviderRequest, UpdateUserRequest,
+    ModelModeRequest, ProfileUpdateRequest, ProviderRequest, SignupRequest, UpdateUserRequest,
 )
 from routes._state import UI_DIR, agent, agent_lock, user_manager
 
@@ -19,25 +19,27 @@ router = APIRouter()
 
 @router.get("/")
 def index(request: Request) -> Response:
-    if user_manager.is_empty():
-        return RedirectResponse(url="/setup", status_code=302)
-    if not request.session.get("user_id"):
+    user_id = request.session.get("user_id")
+    if not user_id:
         return RedirectResponse(url="/login", status_code=302)
+    if not user_manager.get_user_businesses(user_id):
+        return RedirectResponse(url="/onboarding", status_code=302)
     return FileResponse(UI_DIR / "index.html")
 
 
 @router.get("/login")
 def login_page(request: Request) -> Response:
-    if not user_manager.is_empty() and request.session.get("user_id"):
-        return RedirectResponse(url="/", status_code=302)
+    user_id = request.session.get("user_id")
+    if user_id:
+        if user_manager.get_user_businesses(user_id):
+            return RedirectResponse(url="/", status_code=302)
+        return RedirectResponse(url="/onboarding", status_code=302)
     return FileResponse(UI_DIR / "login.html")
 
 
 @router.get("/setup")
-def setup_page(request: Request) -> Response:
-    if not user_manager.is_empty():
-        return RedirectResponse(url="/login", status_code=302)
-    return FileResponse(UI_DIR / "setup.html")
+def setup_page() -> Response:
+    raise HTTPException(status_code=404, detail="Not found.")
 
 
 @router.get("/api/status")
@@ -64,6 +66,29 @@ def auth_logout(request: Request) -> dict:
 @router.get("/api/auth/me")
 def auth_me(current_user: dict = Depends(get_current_user)) -> dict:
     return {"user": current_user}
+
+
+@router.get("/signup")
+def signup_page(request: Request) -> Response:
+    if request.session.get("user_id"):
+        return RedirectResponse(url="/", status_code=302)
+    return FileResponse(UI_DIR / "signup.html")
+
+
+@router.post("/api/auth/signup")
+def auth_signup(payload: SignupRequest, request: Request) -> dict:
+    if payload.password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    try:
+        user = user_manager.create_user(
+            payload.username.strip(), payload.email.strip(), payload.password, "owner"
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    request.session["user_id"] = user["id"]
+    return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
 
 
 @router.get("/api/businesses/{business_key}/profile")
@@ -99,19 +124,8 @@ def update_business_profile_endpoint(
 
 
 @router.post("/api/setup/create-owner")
-def setup_create_owner(payload: CreateUserRequest, request: Request) -> dict:
-    if not user_manager.is_empty():
-        raise HTTPException(status_code=403, detail="Setup already complete.")
-    if payload.role != "owner":
-        raise HTTPException(status_code=400, detail="First account must be owner.")
-    try:
-        user = user_manager.create_user(
-            payload.username.strip(), payload.email.strip(), payload.password, "owner",
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    request.session["user_id"] = user["id"]
-    return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
+def setup_create_owner() -> Response:
+    raise HTTPException(status_code=404, detail="Not found.")
 
 
 @router.get("/api/users")
