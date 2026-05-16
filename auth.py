@@ -184,7 +184,7 @@ class UserManager:
 
 def get_current_user(request: Request) -> dict[str, Any]:
     """Raises 401 if no valid session."""
-    from web_app import user_manager  # late import avoids circular dependency
+    from routes._state import user_manager  # late import avoids circular dependency
     user_id = request.session.get("user_id")
     if not user_id:
         raise HTTPException(status_code=401, detail="Not authenticated")
