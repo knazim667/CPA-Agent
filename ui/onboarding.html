@@ -1,0 +1,203 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>CPA-Agent — Set Up Your Business</title>
+  <style>
+    *{box-sizing:border-box;margin:0;padding:0}
+    body{font-family:'Outfit',sans-serif;background:#0f172a;display:flex;align-items:center;justify-content:center;min-height:100vh;color:#f1f5f9;padding:1rem}
+    .card{background:#1e293b;border:1px solid #334155;border-radius:12px;padding:2.5rem;width:100%;max-width:480px}
+    h1{font-size:1.4rem;font-weight:700;margin-bottom:.25rem}
+    .subtitle{color:#94a3b8;font-size:.875rem;margin-bottom:1.5rem}
+    .steps{display:flex;gap:.5rem;justify-content:center;margin-bottom:2rem}
+    .step-dot{width:10px;height:10px;border-radius:50%;background:#334155;transition:background .3s}
+    .step-dot.active{background:#10b981}
+    label{display:block;font-size:.8rem;color:#94a3b8;margin-bottom:.4rem;font-weight:500;text-transform:uppercase;letter-spacing:.05em}
+    input,select{width:100%;background:#0f172a;border:1px solid #334155;border-radius:8px;padding:.65rem .9rem;color:#f1f5f9;font-size:.95rem;margin-bottom:1.25rem}
+    input:focus,select:focus{outline:none;border-color:#10b981}
+    select option{background:#1e293b}
+    .btn{width:100%;border:none;border-radius:8px;padding:.75rem;font-size:1rem;font-weight:600;cursor:pointer;margin-bottom:.5rem}
+    .btn-primary{background:#10b981;color:#fff}
+    .btn-primary:hover{background:#059669}
+    .btn-secondary{background:transparent;color:#94a3b8;border:1px solid #334155}
+    .btn-secondary:hover{border-color:#94a3b8;color:#f1f5f9}
+    #s1-error{color:#f87171;font-size:.85rem;margin-top:.5rem;text-align:center;min-height:1.2em}
+    .step{display:none}
+    .step.active{display:block}
+    .google-box{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:1.25rem;margin-bottom:1.5rem;text-align:center}
+    .google-box .icon{font-size:2rem;margin-bottom:.5rem}
+    .google-box p{color:#94a3b8;font-size:.875rem;line-height:1.6}
+    #google-error{color:#f87171;font-size:.85rem;margin-top:.5rem;text-align:center;min-height:1.2em}
+    .done-icon{font-size:3rem;text-align:center;margin-bottom:1rem}
+    .done-summary{background:#0f172a;border:1px solid #334155;border-radius:8px;padding:1rem;margin-bottom:1.5rem;font-size:.875rem;line-height:1.7}
+  </style>
+</head>
+<body>
+<div class="card">
+  <h1>Set Up Your Business</h1>
+  <p class="subtitle" id="step-subtitle">Step 1 of 3 — Business Details</p>
+  <div class="steps">
+    <div class="step-dot active" id="dot-1"></div>
+    <div class="step-dot" id="dot-2"></div>
+    <div class="step-dot" id="dot-3"></div>
+  </div>
+
+  <!-- Step 1 -->
+  <div class="step active" id="step-1">
+    <form id="business-form">
+      <label for="business_name">Business Name *</label>
+      <input id="business_name" type="text" required placeholder="Acme LLC"/>
+      <label for="legal_structure">Business Type *</label>
+      <select id="legal_structure" required>
+        <option value="">Select…</option>
+        <option value="single_member_llc">Single-Member LLC</option>
+        <option value="multi_member_llc">Multi-Member LLC</option>
+        <option value="s_corp">S-Corp</option>
+        <option value="c_corp">C-Corp</option>
+        <option value="sole_proprietor">Sole Proprietor</option>
+        <option value="partnership">Partnership</option>
+      </select>
+      <label for="industry">Industry *</label>
+      <select id="industry" required>
+        <option value="">Select…</option>
+        <option value="e_commerce">E-Commerce</option>
+        <option value="professional_services">Professional Services</option>
+        <option value="retail">Retail</option>
+        <option value="import_export">Import / Export</option>
+        <option value="construction">Construction</option>
+        <option value="healthcare">Healthcare</option>
+        <option value="content_creator">Content Creator</option>
+        <option value="manufacturing">Manufacturing</option>
+        <option value="other">Other</option>
+      </select>
+      <label for="ein">EIN (optional)</label>
+      <input id="ein" type="text" placeholder="XX-XXXXXXX" maxlength="10"/>
+      <label for="state">State</label>
+      <select id="state">
+        <option value="">Select…</option>
+        <option>AL</option><option>AK</option><option>AZ</option><option>AR</option>
+        <option>CA</option><option>CO</option><option>CT</option><option>DE</option>
+        <option>DC</option><option>FL</option><option>GA</option><option>HI</option>
+        <option>ID</option><option>IL</option><option>IN</option><option>IA</option>
+        <option>KS</option><option>KY</option><option>LA</option><option>ME</option>
+        <option>MD</option><option>MA</option><option>MI</option><option>MN</option>
+        <option>MS</option><option>MO</option><option>MT</option><option>NE</option>
+        <option>NV</option><option>NH</option><option>NJ</option><option>NM</option>
+        <option>NY</option><option>NC</option><option>ND</option><option>OH</option>
+        <option>OK</option><option>OR</option><option>PA</option><option>RI</option>
+        <option>SC</option><option>SD</option><option>TN</option><option>TX</option>
+        <option>UT</option><option>VT</option><option>VA</option><option>WA</option>
+        <option>WV</option><option>WI</option><option>WY</option>
+      </select>
+      <label for="accounting_basis">Accounting Basis</label>
+      <select id="accounting_basis">
+        <option value="cash">Cash</option>
+        <option value="accrual">Accrual</option>
+      </select>
+      <button type="submit" class="btn btn-primary">Continue →</button>
+      <p id="s1-error"></p>
+    </form>
+  </div>
+
+  <!-- Step 2 -->
+  <div class="step" id="step-2">
+    <div class="google-box">
+      <div class="icon">📊</div>
+      <p>Connect your Google account to create a dedicated spreadsheet for your business in your own Google Drive.</p>
+    </div>
+    <button id="btn-google" class="btn btn-primary">Connect Google Account →</button>
+    <button id="btn-skip" class="btn btn-secondary">Skip for now — connect later in Settings</button>
+    <p id="google-error"></p>
+  </div>
+
+  <!-- Step 3 -->
+  <div class="step" id="step-3">
+    <div class="done-icon">✅</div>
+    <div class="done-summary" id="done-summary">Your business has been registered.</div>
+    <button id="btn-dashboard" class="btn btn-primary">Go to Dashboard →</button>
+  </div>
+</div>
+
+<script>
+var _googleConnected = false;
+
+function setStep(n) {
+  [1,2,3].forEach(function(i) {
+    document.getElementById('step-' + i).classList.toggle('active', i === n);
+    document.getElementById('dot-' + i).classList.toggle('active', i === n);
+  });
+  var labels = {1:'Step 1 of 3 — Business Details', 2:'Step 2 of 3 — Connect Google', 3:'Step 3 of 3 — All Done!'};
+  document.getElementById('step-subtitle').textContent = labels[n] || '';
+}
+
+function renderDoneSummary() {
+  var msg = _googleConnected
+    ? '✅ Google Sheets connected — your ledger spreadsheet is ready.'
+    : '⚠️ Google Sheets not connected. You can connect later in Settings.';
+  document.getElementById('done-summary').innerHTML =
+    '<p>Your business has been registered.</p><p style="margin-top:.5rem;color:#94a3b8">' + msg + '</p>';
+}
+
+(function init() {
+  var params = new URLSearchParams(window.location.search);
+  var step = parseInt(params.get('step'), 10);
+  var err  = params.get('error');
+  if (err) {
+    document.getElementById('google-error').textContent =
+      'Google connection failed or was denied. You can try again or skip.';
+  }
+  fetch('/api/onboarding/status')
+    .then(function(r) { return r.json(); })
+    .then(function(d) {
+      _googleConnected = !!d.google_connected;
+      if (step >= 1 && step <= 3) { setStep(step); renderDoneSummary(); return; }
+      if (d.onboarding_complete) { window.location.href = '/'; return; }
+    })
+    .catch(function() {});
+})();
+
+document.getElementById('business-form').addEventListener('submit', async function(e) {
+  e.preventDefault();
+  var errEl = document.getElementById('s1-error');
+  errEl.textContent = '';
+  var payload = {
+    business_name:   document.getElementById('business_name').value.trim(),
+    legal_structure: document.getElementById('legal_structure').value,
+    industry:        document.getElementById('industry').value,
+    ein:             document.getElementById('ein').value.trim(),
+    state:           document.getElementById('state').value,
+    accounting_basis:document.getElementById('accounting_basis').value,
+  };
+  try {
+    var r = await fetch('/api/onboarding/business', {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(payload),
+    });
+    var d = await r.json();
+    if (r.ok) { setStep(2); } else { errEl.textContent = d.detail || 'Failed to save business.'; }
+  } catch(_) { errEl.textContent = 'Network error.'; }
+});
+
+document.getElementById('btn-google').addEventListener('click', async function() {
+  var errEl = document.getElementById('google-error');
+  errEl.textContent = '';
+  try {
+    var r = await fetch('/api/onboarding/google-auth');
+    var d = await r.json();
+    if (r.ok && d.auth_url) { window.location.href = d.auth_url; }
+    else { errEl.textContent = d.detail || 'Could not start Google sign-in.'; }
+  } catch(_) { errEl.textContent = 'Network error.'; }
+});
+
+document.getElementById('btn-skip').addEventListener('click', function() {
+  _googleConnected = false;
+  setStep(3);
+  renderDoneSummary();
+});
+
+document.getElementById('btn-dashboard').addEventListener('click', function() {
+  window.location.href = '/';
+});
+</script>
+</body>
+</html>
