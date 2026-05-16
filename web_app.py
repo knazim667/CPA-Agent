@@ -20,6 +20,7 @@ from starlette.middleware.sessions import SessionMiddleware
 
 from routes._state import UI_DIR
 from routes.auth import router as auth_router
+from routes.onboarding import router as onboarding_router
 from routes.transactions import router as transactions_router
 from routes.reports import router as reports_router
 from routes.recurring import router as recurring_router
@@ -40,6 +41,7 @@ app.add_middleware(
 
 app.mount("/ui", StaticFiles(directory=UI_DIR), name="ui")
 app.include_router(auth_router)
+app.include_router(onboarding_router)
 app.include_router(transactions_router)
 app.include_router(reports_router)
 app.include_router(recurring_router)
