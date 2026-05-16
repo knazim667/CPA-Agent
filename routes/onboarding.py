@@ -1,8 +1,10 @@
 """Onboarding wizard endpoints: business registration and Google OAuth."""
 from __future__ import annotations
 
+import json
 import os
 import secrets
+from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -18,6 +20,24 @@ _GOOGLE_SCOPES = [
     "https://www.googleapis.com/auth/spreadsheets",
     "https://www.googleapis.com/auth/drive.file",
 ]
+
+_ROOT = Path(__file__).resolve().parent.parent
+
+
+def _google_credentials() -> tuple[str, str]:
+    """Return (client_id, client_secret) from env vars or the client secret JSON file."""
+    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
+    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    if client_id and client_secret:
+        return client_id, client_secret
+    json_path = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET_FILE", "")
+    if json_path:
+        p = Path(json_path) if Path(json_path).is_absolute() else _ROOT / json_path
+        if p.exists():
+            data = json.loads(p.read_text())
+            cfg = data.get("web") or data.get("installed") or {}
+            return cfg.get("client_id", ""), cfg.get("client_secret", "")
+    return "", ""
 
 
 @router.get("/onboarding")
@@ -75,8 +95,7 @@ def onboarding_google_auth(
     request: Request,
     current_user: dict = Depends(get_current_user),
 ) -> dict:
-    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    client_id, client_secret = _google_credentials()
     if not client_id or not client_secret:
         raise HTTPException(status_code=503, detail="Google OAuth is not configured on this server.")
     from core.google_auth import GoogleWorkspaceAuth
@@ -108,8 +127,7 @@ def onboarding_google_callback(
     if not business_keys:
         return RedirectResponse(url="/onboarding", status_code=302)
     business_key = business_keys[0]
-    client_id = os.getenv("GOOGLE_OAUTH_CLIENT_ID", "")
-    client_secret = os.getenv("GOOGLE_OAUTH_CLIENT_SECRET", "")
+    client_id, client_secret = _google_credentials()
     redirect_uri = str(request.base_url).rstrip("/") + "/api/onboarding/google-callback"
     from core.google_auth import GoogleWorkspaceAuth
     try:
