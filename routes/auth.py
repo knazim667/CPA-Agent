@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import os
+import sqlite3
 from typing import Any
 
 from fastapi import APIRouter, Depends, HTTPException, Request
@@ -85,8 +86,9 @@ def auth_signup(payload: SignupRequest, request: Request) -> dict:
         user = user_manager.create_user(
             payload.username.strip(), payload.email.strip(), payload.password, "owner"
         )
-    except ValueError as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except (ValueError, sqlite3.IntegrityError) as exc:
+        msg = "Username or email is already taken." if isinstance(exc, sqlite3.IntegrityError) else str(exc)
+        raise HTTPException(status_code=400, detail=msg) from exc
     request.session["user_id"] = user["id"]
     return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
 
