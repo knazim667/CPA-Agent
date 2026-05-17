@@ -10,8 +10,9 @@ from fastapi.responses import FileResponse, RedirectResponse, Response
 
 from auth import get_current_user, require_owner, require_owner_or_bookkeeper
 from models.requests import (
-    BusinessSwitchRequest, CreateUserRequest, LoginRequest,
-    ModelModeRequest, ProfileUpdateRequest, ProviderRequest, SignupRequest, UpdateUserRequest,
+    BusinessSwitchRequest, CreateUserRequest, ForgotPasswordRequest,
+    LoginRequest, ModelModeRequest, ProfileUpdateRequest, ProviderRequest,
+    ResetPasswordRequest, SignupRequest, UpdateUserRequest,
 )
 from routes._state import UI_DIR, agent, agent_lock, user_manager
 
@@ -91,6 +92,57 @@ def auth_signup(payload: SignupRequest, request: Request) -> dict:
         raise HTTPException(status_code=400, detail=msg) from exc
     request.session["user_id"] = user["id"]
     return {"ok": True, "user": {"id": user["id"], "username": user["username"], "role": user["role"]}}
+
+
+@router.get("/forgot-password")
+def forgot_password_page() -> Response:
+    return FileResponse(UI_DIR / "forgot-password.html")
+
+
+@router.post("/api/auth/forgot-password")
+def api_forgot_password(payload: ForgotPasswordRequest, request: Request) -> dict:
+    user = user_manager.get_user_by_email(payload.email.strip().lower())
+    if user and user["is_active"]:
+        token = user_manager.create_reset_token(user["id"])
+        base = str(request.base_url).rstrip("/")
+        reset_url = f"{base}/reset-password?token={token}"
+        try:
+            from core.email_sender import send_email
+            send_email(
+                to=payload.email.strip(),
+                subject="CPA-Agent — Reset your password",
+                body_html=(
+                    f"<p>Hi <strong>{user['username']}</strong>,</p>"
+                    f"<p>Your username is: <strong>{user['username']}</strong></p>"
+                    f"<p>Click the link below to reset your password "
+                    f"(expires in 1 hour):</p>"
+                    f'<p><a href="{reset_url}">{reset_url}</a></p>'
+                    f"<p>If you didn't request this, ignore this email.</p>"
+                ),
+            )
+        except Exception:
+            pass  # Don't leak SMTP errors to the client
+    return {"ok": True, "message": "If that email is registered, you'll receive reset instructions."}
+
+
+@router.get("/reset-password")
+def reset_password_page(token: str = "") -> Response:
+    if not token:
+        return RedirectResponse(url="/forgot-password", status_code=302)
+    return FileResponse(UI_DIR / "reset-password.html")
+
+
+@router.post("/api/auth/reset-password")
+def api_reset_password(payload: ResetPasswordRequest) -> dict:
+    if payload.password != payload.confirm_password:
+        raise HTTPException(status_code=400, detail="Passwords do not match.")
+    if len(payload.password) < 8:
+        raise HTTPException(status_code=400, detail="Password must be at least 8 characters.")
+    user_id = user_manager.consume_reset_token(payload.token)
+    if not user_id:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset link.")
+    user_manager.update_password(user_id, payload.password)
+    return {"ok": True}
 
 
 @router.get("/api/businesses/{business_key}/profile")

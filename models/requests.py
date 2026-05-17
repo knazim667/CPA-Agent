@@ -134,3 +134,13 @@ class OnboardingBusinessRequest(BaseModel):
     ein: str = ""
     state: str = ""
     accounting_basis: str = "cash"
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    password: str
+    confirm_password: str

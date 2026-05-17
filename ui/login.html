@@ -19,23 +19,32 @@
     .alt-link{text-align:center;margin-top:1.25rem;font-size:.875rem;color:#94a3b8}
     .alt-link a{color:#6366f1;text-decoration:none}
     .alt-link a:hover{text-decoration:underline}
+    .forgot{text-align:right;margin-top:-.75rem;margin-bottom:1.25rem;font-size:.8rem}
+    .forgot a{color:#94a3b8;text-decoration:none}
+    .forgot a:hover{color:#f1f5f9}
+    .banner{background:#064e3b;border:1px solid #10b981;border-radius:8px;padding:.75rem 1rem;font-size:.875rem;color:#34d399;margin-bottom:1.25rem;display:none}
   </style>
 </head>
 <body>
 <div class="card">
   <h1>🧾 CPA-Agent</h1>
   <p class="subtitle">Sign in to your account</p>
+  <div class="banner" id="reset-banner">✅ Password reset successfully. Sign in with your new password.</div>
   <form id="login-form">
     <label for="username">Username</label>
     <input id="username" type="text" autocomplete="username" required/>
     <label for="password">Password</label>
     <input id="password" type="password" autocomplete="current-password" required/>
+    <p class="forgot"><a href="/forgot-password">Forgot password?</a></p>
     <button type="submit">Sign In</button>
     <p id="error"></p>
   </form>
   <p class="alt-link">Don't have an account? <a href="/signup">Sign up</a></p>
 </div>
 <script>
+if (new URLSearchParams(window.location.search).get('reset') === '1') {
+  document.getElementById('reset-banner').style.display = 'block';
+}
 document.getElementById('login-form').addEventListener('submit', async function(e) {
   e.preventDefault();
   var errEl = document.getElementById('error');

@@ -1,6 +1,8 @@
 from __future__ import annotations
 
+import secrets
 import sqlite3
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -46,6 +48,14 @@ class UserManager:
                     user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
                     business_key TEXT NOT NULL,
                     PRIMARY KEY (user_id, business_key)
+                )
+            """)
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS password_reset_tokens (
+                    token TEXT PRIMARY KEY,
+                    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+                    expires_at TEXT NOT NULL,
+                    used INTEGER NOT NULL DEFAULT 0
                 )
             """)
             conn.commit()
@@ -170,6 +180,46 @@ class UserManager:
                 "INSERT OR IGNORE INTO user_businesses (user_id, business_key) VALUES (?, ?)",
                 (user_id, business_key),
             )
+            conn.commit()
+
+    def get_user_by_email(self, email: str) -> Optional[dict[str, Any]]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT id, username, email, password_hash, role, is_active, created_at "
+                "FROM users WHERE email = ?",
+                (email,),
+            ).fetchone()
+        return self._row_to_user(row) if row else None
+
+    def create_reset_token(self, user_id: int) -> str:
+        token = secrets.token_urlsafe(32)
+        expires = (datetime.now(timezone.utc) + timedelta(hours=1)).isoformat()
+        with self._connect() as conn:
+            conn.execute(
+                "INSERT INTO password_reset_tokens (token, user_id, expires_at) VALUES (?, ?, ?)",
+                (token, user_id, expires),
+            )
+            conn.commit()
+        return token
+
+    def consume_reset_token(self, token: str) -> Optional[int]:
+        with self._connect() as conn:
+            row = conn.execute(
+                "SELECT user_id, expires_at, used FROM password_reset_tokens WHERE token = ?",
+                (token,),
+            ).fetchone()
+            if not row or row[2]:
+                return None
+            if datetime.fromisoformat(row[1]) < datetime.now(timezone.utc):
+                return None
+            conn.execute("UPDATE password_reset_tokens SET used = 1 WHERE token = ?", (token,))
+            conn.commit()
+        return row[0]
+
+    def update_password(self, user_id: int, new_password: str) -> None:
+        password_hash = _pwd_context.hash(new_password)
+        with self._connect() as conn:
+            conn.execute("UPDATE users SET password_hash = ? WHERE id = ?", (password_hash, user_id))
             conn.commit()
 
     def can_access_business(self, user: dict[str, Any], business_key: str) -> bool:
