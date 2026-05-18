@@ -27,8 +27,13 @@ def send_email(to: str, subject: str, body_html: str) -> None:
     msg.attach(MIMEText(body_html, "html"))
 
     context = ssl.create_default_context()
-    with smtplib.SMTP(host, port) as server:
-        server.ehlo()
-        server.starttls(context=context)
-        server.login(user, password)
-        server.sendmail(from_addr, to, msg.as_string())
+    if port == 465:
+        with smtplib.SMTP_SSL(host, port, context=context) as server:
+            server.login(user, password)
+            server.sendmail(from_addr, to, msg.as_string())
+    else:
+        with smtplib.SMTP(host, port) as server:
+            server.ehlo()
+            server.starttls(context=context)
+            server.login(user, password)
+            server.sendmail(from_addr, to, msg.as_string())
